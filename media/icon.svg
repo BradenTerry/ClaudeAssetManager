@@ -1,11 +1,34 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
   <defs>
-    <linearGradient id="spark" x1="128" y1="80" x2="128" y2="176" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#EBA88E"/>
-      <stop offset="1" stop-color="#D97757"/>
+    <radialGradient id="bGlow" cx="128" cy="128" r="130" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1A0A26"/>
+      <stop offset="1" stop-color="#000000"/>
+    </radialGradient>
+    <linearGradient id="bEdge" x1="128" y1="50" x2="128" y2="206" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#37F5FF"/>
+      <stop offset="0.5" stop-color="#9B6BFF"/>
+      <stop offset="1" stop-color="#FF3DCB"/>
     </linearGradient>
+    <filter id="bBlur" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="11"/>
+    </filter>
   </defs>
-  <rect width="256" height="256" rx="52" fill="#2A2521"/>
-  <rect x="58" y="58" width="140" height="140" rx="36" stroke="#D97757" stroke-width="11"/>
-  <path d="M128 84 Q128 128 172 128 Q128 128 128 172 Q128 128 84 128 Q128 128 128 84 Z" fill="url(#spark)"/>
+
+  <rect width="256" height="256" rx="56" fill="#070309"/>
+  <rect width="256" height="256" rx="56" fill="url(#bGlow)"/>
+
+  <!-- glow pass -->
+  <g filter="url(#bBlur)" opacity="0.75">
+    <path d="M128 50 L196 84 L128 118 L60 84 Z" fill="none" stroke="#37F5FF" stroke-width="10"/>
+    <path d="M128 94 L196 128 L128 162 L60 128 Z" fill="none" stroke="#9B6BFF" stroke-width="10"/>
+    <path d="M128 138 L196 172 L128 206 L60 172 Z" fill="none" stroke="#FF3DCB" stroke-width="10"/>
+  </g>
+
+  <!-- crisp layers -->
+  <path d="M128 138 L196 172 L128 206 L60 172 Z" fill="#FF3DCB" fill-opacity="0.12" stroke="url(#bEdge)" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M128 94 L196 128 L128 162 L60 128 Z" fill="#070309" stroke="url(#bEdge)" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M128 50 L196 84 L128 118 L60 84 Z" fill="#070309" stroke="url(#bEdge)" stroke-width="5" stroke-linejoin="round"/>
+
+  <!-- asset spark on top layer -->
+  <path d="M128 64 Q128 84 150 84 Q128 84 128 104 Q128 84 106 84 Q128 84 128 64 Z" fill="#FFFFFF"/>
 </svg>

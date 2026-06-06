@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { AssetType, AssetScope, ClaudeAsset } from '../core/types';
-import { InstalledPluginInfo } from '../core/pluginMetadata';
+import { InstalledPluginInfo, MarketplaceInfo } from '../core/pluginMetadata';
 import { derivePluginName, deriveProjectInfo, deriveMemoryProject, isRootLevelAsset } from '../core/containerDerivations';
 
 export enum NodeKind {
@@ -64,6 +64,8 @@ export interface PluginFolderNodeDescriptor {
   description?: string;
   /** True when the plugin has a newer version available in the catalog cache */
   outdated?: boolean;
+  /** Enabled state; undefined when unknown (no enabled map was provided). */
+  enabled?: boolean;
 }
 
 /**
@@ -74,6 +76,10 @@ export interface PluginFolderNodeDescriptor {
 export interface PluginMetadataOptions {
   installedPlugins: Map<string, InstalledPluginInfo>;
   outdated: Set<string>;
+  /** Plugin id -> enabled boolean from settings.json enabledPlugins. When omitted, enabled state is unknown. */
+  enabled?: Map<string, boolean>;
+  /** name -> info, from known_marketplaces.json. When provided, empty marketplaces also show in the tree. */
+  marketplaces?: Map<string, MarketplaceInfo>;
 }
 
 export interface GroupNodeDescriptor {
@@ -194,7 +200,7 @@ function buildContextValue(asset: ClaudeAsset): string {
 function buildAssetNode(asset: ClaudeAsset): AssetNodeDescriptor {
   const isConfig = asset.type === AssetType.Config;
   // Open with the user's default editor for the file type; config (JSON) opens as a file.
-  const commandId = isConfig ? 'claudeAssets.openFile' : 'claudeAssets.openDefault';
+  const commandId = isConfig ? 'claudeAssets.openFile' : 'claudeAssets.openMarkdown';
   return {
     kind: NodeKind.Asset,
     asset,
@@ -325,6 +331,23 @@ function buildMemoryProjectsFolder(memoryAssets: ClaudeAsset[]): ContainerNodeDe
 }
 
 // ---------------------------------------------------------------------------
+// Enabled-count summary helpers
+// ---------------------------------------------------------------------------
+
+/** Returns "X/Y plugins enabled" for a set of installed plugins, or undefined when state unknown or no plugins. */
+function enabledSummary(infos: InstalledPluginInfo[], enabledMap?: Map<string, boolean>): string | undefined {
+  if (!enabledMap || infos.length === 0) return undefined;
+  const enabled = infos.filter(i => enabledMap.get(i.id) !== false).length;
+  return `${enabled}/${infos.length} plugins enabled`;
+}
+
+/** Joins non-empty parts with " · "; returns undefined when all parts are empty. */
+function joinDesc(parts: (string | undefined)[]): string | undefined {
+  const kept = parts.filter((p): p is string => !!p);
+  return kept.length ? kept.join(' · ') : undefined;
+}
+
+// ---------------------------------------------------------------------------
 // Main builder
 // ---------------------------------------------------------------------------
 
@@ -351,6 +374,10 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
     (pluginMeta && (pluginMeta as Partial<PluginMetadataOptions>).installedPlugins) ? pluginMeta.installedPlugins : new Map();
   const outdatedPlugins: Set<string> =
     (pluginMeta && (pluginMeta as Partial<PluginMetadataOptions>).outdated) ? pluginMeta.outdated : new Set();
+  const enabledMap: Map<string, boolean> | undefined =
+    (pluginMeta && (pluginMeta as Partial<PluginMetadataOptions>).enabled) ? pluginMeta.enabled : undefined;
+  const knownMarketplaces: Map<string, MarketplaceInfo> | undefined =
+    (pluginMeta && (pluginMeta as Partial<PluginMetadataOptions>).marketplaces) ? pluginMeta.marketplaces : undefined;
 
   // Partition by scope
   const globalAssets: ClaudeAsset[] = [];
@@ -392,12 +419,15 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
   // of plugin folders whose children are the scanned assets grouped by type.
   let pluginsFolderNode: ContainerNodeDescriptor | undefined;
 
-  if (installedPlugins.size > 0) {
+  if (installedPlugins.size > 0 || (knownMarketplaces && knownMarketplaces.size > 0)) {
     const updatableCount = [...installedPlugins.keys()].filter(n => outdatedPlugins.has(n)).length;
 
     const buildPluginFolder = (info: InstalledPluginInfo): PluginFolderNodeDescriptor => {
       const isOut = outdatedPlugins.has(info.name);
-      const descStr = isOut ? `${info.version} - update available ↓` : info.version;
+      const enabled = enabledMap ? (enabledMap.get(info.id) !== false) : undefined;
+      let descStr = info.version;
+      if (isOut) descStr += ' - update available ↓';
+      if (enabled === false) descStr += ' (disabled)';
       return {
         kind: NodeKind.PluginFolder as NodeKind.PluginFolder,
         pluginName: info.name,
@@ -406,6 +436,7 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
         children: [],
         description: descStr,
         outdated: isOut || undefined,
+        enabled,
         dirPath: info.installPath || undefined
       };
     };
@@ -422,22 +453,34 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
       }
     }
 
-    const marketplaceFolders: ContainerNodeDescriptor[] = [...byMarketplace.keys()]
+    // Build the union of installed-derived names and known marketplace names.
+    const allNames = new Set<string>([...byMarketplace.keys()]);
+    if (knownMarketplaces) {
+      for (const n of knownMarketplaces.keys()) allNames.add(n);
+    }
+
+    const marketplaceFolders: ContainerNodeDescriptor[] = [...allNames]
       .sort((a, b) => a.localeCompare(b))
       .map(mk => {
-        const infos = byMarketplace.get(mk)!.slice().sort((a, b) => a.name.localeCompare(b.name));
+        const infos = (byMarketplace.get(mk) ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
         // Marketplace dir on disk is the parent of <plugin>/<version>: .../plugins/cache/<marketplace>.
         const sample = infos.find(i => i.installPath);
-        const mkDir = sample ? path.dirname(path.dirname(sample.installPath)) : undefined;
+        const mkDir = sample
+          ? path.dirname(path.dirname(sample.installPath))
+          : (knownMarketplaces?.get(mk)?.installLocation || undefined);
         const mkOutdated = infos.filter(i => outdatedPlugins.has(i.name)).length;
+        const updatesText = mkOutdated > 0
+          ? `${mkOutdated} update${mkOutdated === 1 ? '' : 's'} available ↓`
+          : undefined;
+        const mkDescription = infos.length === 0
+          ? '(no plugins installed)'
+          : joinDesc([enabledSummary(infos, enabledMap), updatesText]);
         return {
           kind: NodeKind.Container as NodeKind.Container,
           containerKind: 'marketplace' as const,
           label: mk,
           children: infos.map(buildPluginFolder),
-          description: mkOutdated > 0
-            ? `${mkOutdated} Update${mkOutdated === 1 ? '' : 's'} available ↓`
-            : undefined,
+          description: mkDescription,
           // Outdated variant gates the marketplace-level "Update Plugins" command.
           contextValue: mkOutdated > 0 ? 'assetMarketplaceOutdated' : 'assetMarketplace',
           dirPath: mkDir
@@ -450,14 +493,16 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
       ? deriveSegmentRoot(anyInstall.installPath, 'plugins')
       : (pluginAssets.length > 0 ? deriveSegmentRoot(pluginAssets[0].filePath, 'plugins') : undefined);
 
+    const allInstalled = [...installedPlugins.values()];
+    const rootUpdates = updatableCount > 0
+      ? `${updatableCount} update${updatableCount === 1 ? '' : 's'} available ↓`
+      : undefined;
     pluginsFolderNode = {
       kind: NodeKind.Container,
       containerKind: 'plugins',
       label: 'plugins',
       children: marketplaceFolders,
-      description: updatableCount > 0
-        ? `${updatableCount} Update${updatableCount === 1 ? '' : 's'} available ↓`
-        : undefined,
+      description: joinDesc([enabledSummary(allInstalled, enabledMap), rootUpdates]),
       // Outdated variant gates the "Update All" command; both variants are reveal-able.
       contextValue: updatableCount > 0 ? 'assetPluginsRootOutdated' : 'assetPluginsRoot',
       dirPath: pluginsRoot

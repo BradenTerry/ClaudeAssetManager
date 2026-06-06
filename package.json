@@ -65,62 +65,96 @@
         "command": "claudeAssets.refresh",
         "title": "Refresh",
         "icon": "$(refresh)",
-        "category": "Claude Assets"
+        "category": "Claude Asset Manager"
       },
       {
         "command": "claudeAssets.addDirectory",
         "title": "Add Directory",
         "icon": "$(add)",
-        "category": "Claude Assets"
+        "category": "Claude Asset Manager"
       },
       {
         "command": "claudeAssets.removeDirectory",
         "title": "Remove Directory",
-        "category": "Claude Assets"
+        "category": "Claude Asset Manager"
       },
       {
         "command": "claudeAssets.openFile",
         "title": "Open File",
-        "category": "Claude Assets"
+        "category": "Claude Asset Manager"
       },
       {
         "command": "claudeAssets.openPreview",
         "title": "Open Preview",
-        "category": "Claude Assets"
+        "category": "Claude Asset Manager"
       },
       {
         "command": "claudeAssets.revealInOS",
         "title": "Reveal in File Manager",
-        "category": "Claude Assets"
+        "category": "Claude Asset Manager"
       },
       {
         "command": "claudeAssets.deleteFile",
         "title": "Delete",
         "icon": "$(trash)",
-        "category": "Claude Assets"
+        "category": "Claude Asset Manager"
       },
       {
         "command": "claudeAssets.updatePlugin",
         "title": "Update Plugin",
         "icon": "$(arrow-circle-down)",
-        "category": "Claude Assets"
+        "category": "Claude Asset Manager"
       },
       {
         "command": "claudeAssets.updateAllPlugins",
         "title": "Update All Plugins",
         "icon": "$(arrow-circle-down)",
-        "category": "Claude Assets"
+        "category": "Claude Asset Manager"
       },
       {
         "command": "claudeAssets.updateMarketplacePlugins",
         "title": "Update Plugins",
         "icon": "$(arrow-circle-down)",
-        "category": "Claude Assets"
+        "category": "Claude Asset Manager"
       },
       {
         "command": "claudeAssets.uninstallPlugin",
         "title": "Uninstall Plugin",
-        "category": "Claude Assets"
+        "category": "Claude Asset Manager"
+      },
+      {
+        "command": "claudeAssets.enablePlugin",
+        "title": "Enable Plugin",
+        "category": "Claude Asset Manager"
+      },
+      {
+        "command": "claudeAssets.disablePlugin",
+        "title": "Disable Plugin",
+        "category": "Claude Asset Manager"
+      },
+      {
+        "command": "claudeAssets.addMarketplace",
+        "title": "Add Marketplace",
+        "icon": "$(add)",
+        "category": "Claude Asset Manager"
+      },
+      {
+        "command": "claudeAssets.removeMarketplace",
+        "title": "Remove Marketplace",
+        "icon": "$(trash)",
+        "category": "Claude Asset Manager"
+      },
+      {
+        "command": "claudeAssets.refreshMarketplace",
+        "title": "Refresh Source",
+        "icon": "$(sync)",
+        "category": "Claude Asset Manager"
+      },
+      {
+        "command": "claudeAssets.browseMarketplace",
+        "title": "Add Plugin",
+        "icon": "$(add)",
+        "category": "Claude Asset Manager"
       }
     ],
     "menus": {
@@ -154,13 +188,48 @@
         },
         {
           "command": "claudeAssets.updatePlugin",
-          "when": "view == claudeAssets.global && viewItem == assetPluginFolderOutdated",
+          "when": "view == claudeAssets.global && viewItem =~ /^assetPluginFolder.*Outdated$/",
           "group": "manage"
         },
         {
           "command": "claudeAssets.uninstallPlugin",
-          "when": "view == claudeAssets.global && (viewItem == assetPluginFolder || viewItem == assetPluginFolderOutdated)",
+          "when": "view == claudeAssets.global && viewItem =~ /^assetPluginFolder(Enabled|Disabled)/",
           "group": "manage"
+        },
+        {
+          "command": "claudeAssets.enablePlugin",
+          "when": "view == claudeAssets.global && viewItem =~ /^assetPluginFolderDisabled/",
+          "group": "manage"
+        },
+        {
+          "command": "claudeAssets.disablePlugin",
+          "when": "view == claudeAssets.global && viewItem =~ /^assetPluginFolderEnabled/",
+          "group": "manage"
+        },
+        {
+          "command": "claudeAssets.addMarketplace",
+          "when": "view == claudeAssets.global && viewItem =~ /^assetPluginsRoot/",
+          "group": "manage"
+        },
+        {
+          "command": "claudeAssets.browseMarketplace",
+          "when": "view == claudeAssets.global && viewItem =~ /^assetMarketplace/",
+          "group": "inline"
+        },
+        {
+          "command": "claudeAssets.browseMarketplace",
+          "when": "view == claudeAssets.global && viewItem =~ /^assetMarketplace/",
+          "group": "manage"
+        },
+        {
+          "command": "claudeAssets.refreshMarketplace",
+          "when": "view == claudeAssets.global && viewItem =~ /^assetMarketplace/",
+          "group": "manage"
+        },
+        {
+          "command": "claudeAssets.removeMarketplace",
+          "when": "view == claudeAssets.global && viewItem =~ /^assetMarketplace/",
+          "group": "zzz_delete"
         },
         {
           "command": "claudeAssets.updateAllPlugins",
@@ -180,7 +249,7 @@
       ]
     },
     "configuration": {
-      "title": "Claude Assets",
+      "title": "Claude Asset Manager",
       "properties": {
         "claudeAssets.directories": {
           "type": "array",
@@ -213,6 +282,24 @@
             ".vs"
           ],
           "description": "Directory names to exclude from recursive scans."
+        },
+        "claudeAssets.maxDepth": {
+          "type": "number",
+          "default": 6,
+          "minimum": 1,
+          "description": "Maximum directory depth to search for a .claude directory. Once a .claude directory is found, its entire contents are scanned regardless of this limit."
+        },
+        "claudeAssets.markdownOpenMode": {
+          "type": "string",
+          "enum": ["default", "code", "preview", "split"],
+          "enumDescriptions": [
+            "Use VS Code's default editor for Markdown.",
+            "Open the Markdown source in the editor.",
+            "Open the rendered Markdown preview.",
+            "Open the source and rendered preview side by side."
+          ],
+          "default": "default",
+          "description": "How Claude Markdown assets open when clicked in the tree."
         }
       }
     }
@@ -220,7 +307,7 @@
   "scripts": {
     "compile": "tsc -p .",
     "watch": "tsc -p . --watch",
-    "bundle": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node20 --minify",
+    "bundle": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node20 --minify --sourcemap",
     "test": "npm run compile && TS_NODE_PROJECT=tsconfig.test.json mocha",
     "vscode:prepublish": "npm run bundle",
     "package": "npx --yes @vscode/vsce package --readme-path MARKETPLACE.md"

@@ -35,7 +35,11 @@ Your machine-wide `~/.claude` assets:
 - A **Projects** folder holding per-project memory.
 - A **Plugins** folder listing every installed plugin, nested under its source marketplace with
   its version, and an `N Updates available` indicator when a newer version exists in your local
-  catalog (no network calls are made).
+  catalog (no network calls are made). Each plugin shows its enabled/disabled state: enabled
+  plugins render a green icon, disabled plugins a dimmed icon with a ` (disabled)` suffix. Every
+  configured marketplace (from `known_marketplaces.json`) appears here even with no installed
+  plugins yet, so an added marketplace shows up immediately and lists `(no plugins installed)`. The
+  **Plugins** folder and each marketplace also show an `X/Y plugins enabled` summary.
 
 ### Details that keep the tree clean
 
@@ -59,13 +63,24 @@ Your machine-wide `~/.claude` assets:
 Plugin actions shell out to the Claude Code CLI and require `claude` on your `PATH`. After any
 change, restart your Claude Code session to apply it.
 
+- **Enable Plugin** / **Disable Plugin**: right-click a plugin to toggle it (runs
+  `claude plugin enable|disable <id>`). The menu shows whichever action applies to the current state.
 - **Update Plugin**: right-click an out-of-date plugin.
 - **Update Plugins**: right-click a marketplace folder to update every out-of-date plugin from it.
 - **Update All Plugins**: right-click the **Plugins** folder.
 - **Uninstall Plugin**: right-click a plugin.
+- **Add Plugin**: click the inline `+` (or right-click) on a marketplace folder to browse every
+  plugin available from that source that you have not installed, pick one or more, and install them
+  (runs `claude plugin install <name@marketplace>`).
+- **Add Marketplace**: right-click the **Plugins** folder and enter a GitHub repo, URL, or path
+  (runs `claude plugin marketplace add <source>`).
+- **Refresh Source**: right-click a marketplace folder to pull the latest from its source
+  (runs `claude plugin marketplace update <name>`).
+- **Remove Marketplace**: right-click a marketplace folder (runs `claude plugin marketplace remove <name>`).
 
-Each action confirms before running and shows the exact command it will execute. Files inside a
-plugin cannot be deleted individually; uninstall the plugin instead.
+Each action confirms before running where it is destructive and shows the exact command it will
+execute. Files inside a plugin cannot be deleted individually; uninstall the plugin instead. The
+synthetic `(local)` marketplace group cannot be refreshed or removed.
 
 ### Refresh
 
@@ -76,6 +91,11 @@ plugin cannot be deleted individually; uninstall the plugin instead.
 - `claudeAssets.directories`: additional directories to scan recursively for projects.
 - `claudeAssets.followSymlinks`: follow symbolic links while scanning (default `true`).
 - `claudeAssets.excludeDirs`: directory names to skip during recursive scans.
+- `claudeAssets.maxDepth`: how deep to search for a `.claude` directory (default `6`, minimum `1`).
+  Once a `.claude` directory is found, its entire contents are scanned regardless of this limit.
+- `claudeAssets.markdownOpenMode`: how a Markdown asset opens on single click -- `default` (VS Code's
+  default editor), `code` (source editor), `preview` (rendered preview), or `split` (source and
+  preview side by side). Defaults to `default`.
 
 ## Install from the Marketplace
 

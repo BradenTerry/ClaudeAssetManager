@@ -11,7 +11,7 @@ import {
   WorktreeNameFolderNodeDescriptor,
   PluginMetadataOptions
 } from '../../src/tree/nodeDescriptors';
-import { InstalledPluginInfo } from '../../src/core/pluginMetadata';
+import { InstalledPluginInfo, MarketplaceInfo } from '../../src/core/pluginMetadata';
 
 function makeAsset(
   type: AssetType,
@@ -210,7 +210,7 @@ describe('buildTreeNodes -- Plugins folder children (nested inside Global)', () 
     const assetNode = cmdGroup.children[0] as AssetNodeDescriptor;
     assert.strictEqual(assetNode.kind, NodeKind.Asset);
     assert.ok(assetNode.contextValue.includes('-md-'), 'plugin asset should have -md- contextValue');
-    assert.strictEqual(assetNode.commandId, 'claudeAssets.openDefault');
+    assert.strictEqual(assetNode.commandId, 'claudeAssets.openMarkdown');
   });
 
   it('uses real plugin path shapes: cache path -> correct plugin name', () => {
@@ -268,7 +268,7 @@ describe('buildTreeNodes -- project containers', () => {
     const cmdGroup = projContainer.children[0] as GroupNodeDescriptor;
     const assetNode = cmdGroup.children[0] as AssetNodeDescriptor;
     assert.ok(assetNode.contextValue.includes('-md-'), 'command asset should have -md- contextValue');
-    assert.strictEqual(assetNode.commandId, 'claudeAssets.openDefault');
+    assert.strictEqual(assetNode.commandId, 'claudeAssets.openMarkdown');
     assert.strictEqual(assetNode.filePath, filePath);
   });
 
@@ -909,7 +909,7 @@ describe('buildTreeNodes -- worktree asset grouping', () => {
     const configNode = allAssets.find(a => a.filePath === configPath);
     assert.ok(skillNode, 'skill asset node should exist in worktree group');
     assert.ok(configNode, 'config asset node should exist in worktree group');
-    assert.strictEqual(skillNode!.commandId, 'claudeAssets.openDefault', 'markdown leaf should use openDefault');
+    assert.strictEqual(skillNode!.commandId, 'claudeAssets.openMarkdown', 'markdown leaf should use openMarkdown');
     assert.ok(skillNode!.contextValue.includes('-md-'), 'skill should have -md- contextValue');
     assert.strictEqual(configNode!.commandId, 'claudeAssets.openFile', 'config should use openFile');
     assert.ok(configNode!.contextValue.includes('asset-config'), 'config should have asset-config contextValue');
@@ -1061,7 +1061,7 @@ describe('buildTreeNodes -- flat leaves for ClaudeMd and Config', () => {
     assert.strictEqual(leaves.length, 0, 'no direct leaves when only grouped types');
   });
 
-  it('AC-FLAT: flat leaf nodes have correct commandId and contextValue (CLAUDE.md -> openDefault, Config -> openFile)', () => {
+  it('AC-FLAT: flat leaf nodes have correct commandId and contextValue (CLAUDE.md -> openMarkdown, Config -> openFile)', () => {
     const assets: ClaudeAsset[] = [
       makeAsset(AssetType.ClaudeMd, 'CLAUDE.md', '/home/user/.claude/CLAUDE.md', AssetScope.Global, '/home/user/.claude'),
       makeAsset(AssetType.Config, 'settings.json', '/home/user/.claude/settings.json', AssetScope.Global, '/home/user/.claude')
@@ -1072,7 +1072,7 @@ describe('buildTreeNodes -- flat leaves for ClaudeMd and Config', () => {
 
     const claudeMd = leaves.find(a => a.asset.type === AssetType.ClaudeMd)!;
     assert.ok(claudeMd, 'expected CLAUDE.md leaf');
-    assert.strictEqual(claudeMd.commandId, 'claudeAssets.openDefault', 'CLAUDE.md should use openDefault');
+    assert.strictEqual(claudeMd.commandId, 'claudeAssets.openMarkdown', 'CLAUDE.md should use openMarkdown');
     assert.ok(claudeMd.contextValue.includes('-md-'), 'CLAUDE.md contextValue should contain -md-');
 
     const config = leaves.find(a => a.asset.type === AssetType.Config)!;
@@ -1122,5 +1122,293 @@ describe('buildTreeNodes -- defensive guard for missing pluginMeta', () => {
     // Plugin folder should have no description (no installedPlugins map to look up)
     const folder = pluginsContainer!.children[0] as PluginFolderNodeDescriptor;
     assert.strictEqual(folder.description, undefined, 'no description with empty pluginMeta');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-EN-3..5: enabled/disabled plugin descriptor rendering
+// ---------------------------------------------------------------------------
+
+describe('buildTreeNodes -- plugin enabled/disabled state', () => {
+  // Local meta builder that accepts an optional enabled map
+  function makePluginMetaWithEnabled(
+    installed: Record<string, InstalledPluginInfo>,
+    outdatedNames: string[] = [],
+    enabledMap?: Map<string, boolean>
+  ): PluginMetadataOptions {
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map(Object.entries(installed)),
+      outdated: new Set(outdatedNames),
+      ...(enabledMap !== undefined ? { enabled: enabledMap } : {})
+    };
+    return meta;
+  }
+
+  it('AC-EN-3: disabled plugin descriptor has enabled===false and description ends with " (disabled)"', () => {
+    const info = makeInstalledInfo('skill-creator', INSTALL_PATH_SC, '1.0.0');
+    const enabledMap = new Map<string, boolean>([['skill-creator@mk', false]]);
+    const meta = makePluginMetaWithEnabled({ 'skill-creator': info }, [], enabledMap);
+    const nodes = buildTreeNodes([], meta);
+    const folder = getPluginFolders(nodes).find(f => f.pluginName === 'skill-creator')!;
+    assert.ok(folder, 'skill-creator folder should exist');
+    assert.strictEqual(folder.enabled, false, 'enabled should be false');
+    assert.ok(folder.description && folder.description.endsWith(' (disabled)'),
+      `description should end with " (disabled)", got: "${folder.description}"`);
+  });
+
+  it('AC-EN-4a: plugin mapped to true has enabled===true and NO " (disabled)" suffix', () => {
+    const info = makeInstalledInfo('skill-creator', INSTALL_PATH_SC, '1.0.0');
+    const enabledMap = new Map<string, boolean>([['skill-creator@mk', true]]);
+    const meta = makePluginMetaWithEnabled({ 'skill-creator': info }, [], enabledMap);
+    const nodes = buildTreeNodes([], meta);
+    const folder = getPluginFolders(nodes).find(f => f.pluginName === 'skill-creator')!;
+    assert.ok(folder, 'skill-creator folder should exist');
+    assert.strictEqual(folder.enabled, true, 'enabled should be true');
+    assert.ok(folder.description && !folder.description.includes('(disabled)'),
+      `description should NOT contain "(disabled)", got: "${folder.description}"`);
+  });
+
+  it('AC-EN-4b: plugin absent from enabled map has enabled===true and NO " (disabled)" suffix', () => {
+    const info = makeInstalledInfo('skill-creator', INSTALL_PATH_SC, '1.0.0');
+    // Pass a non-empty enabled map but WITHOUT this plugin's id
+    const enabledMap = new Map<string, boolean>([['other@mk', true]]);
+    const meta = makePluginMetaWithEnabled({ 'skill-creator': info }, [], enabledMap);
+    const nodes = buildTreeNodes([], meta);
+    const folder = getPluginFolders(nodes).find(f => f.pluginName === 'skill-creator')!;
+    assert.strictEqual(folder.enabled, true, 'absent id defaults to enabled');
+    assert.ok(folder.description && !folder.description.includes('(disabled)'),
+      `description should NOT contain "(disabled)", got: "${folder.description}"`);
+  });
+
+  it('AC-EN-4c: no enabled map -> descriptor.enabled is undefined; description is version only (AC-TREE-NEW3c stays green)', () => {
+    const meta = makePluginMeta({ 'skill-creator': makeInstalledInfo('skill-creator', INSTALL_PATH_SC, '1.0.0') });
+    const nodes = buildTreeNodes([], meta);
+    const folder = getPluginFolders(nodes).find(f => f.pluginName === 'skill-creator')!;
+    assert.strictEqual(folder.enabled, undefined, 'no enabled map -> undefined');
+    assert.strictEqual(folder.description, '1.0.0', 'description must be exactly the version string');
+  });
+
+  it('AC-EN-5: disabled + outdated plugin description contains both "update available" and "(disabled)"', () => {
+    const info = makeInstalledInfo('skill-creator', INSTALL_PATH_SC, '1.0.0');
+    const enabledMap = new Map<string, boolean>([['skill-creator@mk', false]]);
+    const meta = makePluginMetaWithEnabled({ 'skill-creator': info }, ['skill-creator'], enabledMap);
+    const nodes = buildTreeNodes([], meta);
+    const folder = getPluginFolders(nodes).find(f => f.pluginName === 'skill-creator')!;
+    assert.ok(folder.description && folder.description.includes('update available'),
+      `description should contain "update available", got: "${folder.description}"`);
+    assert.ok(folder.description && folder.description.includes('(disabled)'),
+      `description should contain "(disabled)", got: "${folder.description}"`);
+    assert.strictEqual(folder.enabled, false, 'enabled should be false');
+    assert.strictEqual(folder.outdated, true, 'outdated should be true');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-MK: known_marketplaces.json integration -- always show configured marketplaces
+// ---------------------------------------------------------------------------
+
+describe('buildTreeNodes -- known marketplaces (always visible)', () => {
+  // Builder that accepts an optional marketplaces map -- does NOT touch existing makePluginMeta call sites.
+  function makePluginMetaWithMarketplaces(
+    installed: Record<string, InstalledPluginInfo>,
+    outdatedNames: string[] = [],
+    marketplaces?: Map<string, MarketplaceInfo>
+  ): PluginMetadataOptions {
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map(Object.entries(installed)),
+      outdated: new Set(outdatedNames),
+      ...(marketplaces !== undefined ? { marketplaces } : {})
+    };
+    return meta;
+  }
+
+  function makeMarketplaceInfo(name: string, installLocation = ''): MarketplaceInfo {
+    return { name, installLocation, lastUpdated: '' };
+  }
+
+  it('AC-MK-2: marketplaces map with an empty marketplace -> Plugins container has a marketplace folder with children.length===0', () => {
+    const installedInfo = makeInstalledInfo('skill-creator', INSTALL_PATH_SC);
+    const marketplaces = new Map<string, MarketplaceInfo>([
+      ['mk', makeMarketplaceInfo('mk', '/p/mk')],
+      ['empty-mk', makeMarketplaceInfo('empty-mk', '/p/empty-mk')]
+    ]);
+    const meta = makePluginMetaWithMarketplaces({ 'skill-creator': installedInfo }, [], marketplaces);
+    const nodes = buildTreeNodes([], meta);
+    const plugins = getPluginsContainer(nodes);
+    assert.ok(plugins, 'expected Plugins container');
+    const emptyMk = (plugins!.children as ContainerNodeDescriptor[]).find(c => c.label === 'empty-mk');
+    assert.ok(emptyMk, 'expected empty-mk marketplace folder');
+    assert.strictEqual(emptyMk!.containerKind, 'marketplace');
+    assert.strictEqual(emptyMk!.children.length, 0, 'empty marketplace should have no plugin children');
+  });
+
+  it('AC-MK-3: empty installedPlugins + non-empty marketplaces -> Global container has a plugins container child', () => {
+    const marketplaces = new Map<string, MarketplaceInfo>([
+      ['some-mk', makeMarketplaceInfo('some-mk', '/p/some-mk')]
+    ]);
+    const meta = makePluginMetaWithMarketplaces({}, [], marketplaces);
+    const nodes = buildTreeNodes([], meta);
+    const global = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global');
+    assert.ok(global, 'Global container should appear when there are known marketplaces');
+    const pluginsChild = global!.children.find(
+      c => c.kind === NodeKind.Container && (c as ContainerNodeDescriptor).containerKind === 'plugins'
+    );
+    assert.ok(pluginsChild, 'Global should have a plugins container child when marketplaces are configured');
+  });
+
+  it('AC-MK-4: one populated marketplace (via installed plugin) + one empty known marketplace -> both folders present; populated keeps its plugin children', () => {
+    const installedInfo = makeInstalledInfo('skill-creator', INSTALL_PATH_SC);
+    const marketplaces = new Map<string, MarketplaceInfo>([
+      ['mk', makeMarketplaceInfo('mk', '/p/mk')],
+      ['empty-mk', makeMarketplaceInfo('empty-mk', '/p/empty-mk')]
+    ]);
+    const meta = makePluginMetaWithMarketplaces({ 'skill-creator': installedInfo }, [], marketplaces);
+    const nodes = buildTreeNodes([], meta);
+    const plugins = getPluginsContainer(nodes);
+    assert.ok(plugins, 'expected Plugins container');
+
+    const mkFolder = (plugins!.children as ContainerNodeDescriptor[]).find(c => c.label === 'mk');
+    const emptyMkFolder = (plugins!.children as ContainerNodeDescriptor[]).find(c => c.label === 'empty-mk');
+
+    assert.ok(mkFolder, 'populated marketplace folder should be present');
+    assert.ok(emptyMkFolder, 'empty marketplace folder should also be present');
+
+    // populated marketplace has its plugin folder children
+    assert.ok(mkFolder!.children.length > 0, 'populated marketplace should have plugin children');
+    const pluginFolderChild = mkFolder!.children.find(c => c.kind === NodeKind.PluginFolder) as PluginFolderNodeDescriptor | undefined;
+    assert.ok(pluginFolderChild, 'populated marketplace should contain a PluginFolder child');
+    assert.strictEqual(pluginFolderChild!.pluginName, 'skill-creator');
+  });
+
+  it('AC-MK-5: empty marketplace folder description is "(no plugins installed)"', () => {
+    const marketplaces = new Map<string, MarketplaceInfo>([
+      ['empty-mk', makeMarketplaceInfo('empty-mk', '/p/empty-mk')]
+    ]);
+    const meta = makePluginMetaWithMarketplaces({}, [], marketplaces);
+    const nodes = buildTreeNodes([], meta);
+    const plugins = getPluginsContainer(nodes);
+    assert.ok(plugins, 'expected Plugins container');
+    const emptyMk = (plugins!.children as ContainerNodeDescriptor[]).find(c => c.label === 'empty-mk');
+    assert.ok(emptyMk, 'expected empty-mk marketplace folder');
+    assert.strictEqual(emptyMk!.description, '(no plugins installed)', 'empty marketplace description should be "(no plugins installed)"');
+  });
+
+  it('AC-MK-6 (back-compat): passing meta WITHOUT marketplaces still derives marketplaces only from installed plugins', () => {
+    // This uses the unmodified makePluginMeta -- no marketplaces field
+    const meta = makePluginMeta({ 'skill-creator': makeInstalledInfo('skill-creator', INSTALL_PATH_SC) });
+    const nodes = buildTreeNodes([], meta);
+    const plugins = getPluginsContainer(nodes)!;
+    assert.ok(plugins, 'Plugins container should exist');
+    // Only the 'mk' marketplace derived from the installed plugin
+    const mkFolders = (plugins.children as ContainerNodeDescriptor[]).filter(c => c.containerKind === 'marketplace');
+    assert.strictEqual(mkFolders.length, 1, 'exactly 1 marketplace derived from installed plugin');
+    assert.strictEqual(mkFolders[0].label, 'mk');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-CNT: enabled-count summary on Plugins root and per-marketplace containers
+// ---------------------------------------------------------------------------
+
+describe('buildTreeNodes -- enabled-count summary (X/Y plugins enabled)', () => {
+  // Local meta builder with enabled map support (reuses makePluginMetaWithEnabled pattern from AC-EN tests)
+  function makePluginMetaWithEnabled(
+    installed: Record<string, InstalledPluginInfo>,
+    outdatedNames: string[] = [],
+    enabledMap?: Map<string, boolean>
+  ): PluginMetadataOptions {
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map(Object.entries(installed)),
+      outdated: new Set(outdatedNames),
+      ...(enabledMap !== undefined ? { enabled: enabledMap } : {})
+    };
+    return meta;
+  }
+
+  // Helper: get the 'mk' marketplace container from inside the Plugins container
+  function getMkContainer(nodes: ReturnType<typeof buildTreeNodes>): ContainerNodeDescriptor | undefined {
+    const plugins = getPluginsContainer(nodes);
+    if (!plugins) return undefined;
+    return (plugins.children as ContainerNodeDescriptor[]).find(c => c.containerKind === 'marketplace' && c.label === 'mk');
+  }
+
+  it('AC-CNT-1: 2 installed plugins (1 disabled) -> Plugins root description includes "1/2 plugins enabled"', () => {
+    const infoA = makeInstalledInfo('a', '/p/cache/mk/a/1.0');
+    const infoB = makeInstalledInfo('b', '/p/cache/mk/b/1.0');
+    const enabledMap = new Map<string, boolean>([['a@mk', true], ['b@mk', false]]);
+    const meta = makePluginMetaWithEnabled({ a: infoA, b: infoB }, [], enabledMap);
+    const nodes = buildTreeNodes([], meta);
+    const plugins = getPluginsContainer(nodes)!;
+    assert.ok(plugins, 'expected Plugins container');
+    assert.ok(
+      plugins.description && plugins.description.includes('1/2 plugins enabled'),
+      `Plugins root description should include "1/2 plugins enabled", got: "${plugins.description}"`
+    );
+  });
+
+  it('AC-CNT-2: marketplace container with 2 installed plugins (1 disabled) -> marketplace description includes "1/2 plugins enabled"', () => {
+    const infoA = makeInstalledInfo('a', '/p/cache/mk/a/1.0');
+    const infoB = makeInstalledInfo('b', '/p/cache/mk/b/1.0');
+    const enabledMap = new Map<string, boolean>([['a@mk', true], ['b@mk', false]]);
+    const meta = makePluginMetaWithEnabled({ a: infoA, b: infoB }, [], enabledMap);
+    const nodes = buildTreeNodes([], meta);
+    const mk = getMkContainer(nodes)!;
+    assert.ok(mk, 'expected mk marketplace container');
+    assert.ok(
+      mk.description && mk.description.includes('1/2 plugins enabled'),
+      `Marketplace description should include "1/2 plugins enabled", got: "${mk.description}"`
+    );
+  });
+
+  it('AC-CNT-3: marketplace with 1 outdated plugin AND 1 disabled plugin -> description contains both "plugins enabled" and "update"', () => {
+    const infoA = makeInstalledInfo('a', '/p/cache/mk/a/1.0');
+    const infoB = makeInstalledInfo('b', '/p/cache/mk/b/1.0');
+    // a is outdated, b is disabled
+    const enabledMap = new Map<string, boolean>([['a@mk', true], ['b@mk', false]]);
+    const meta = makePluginMetaWithEnabled({ a: infoA, b: infoB }, ['a'], enabledMap);
+    const nodes = buildTreeNodes([], meta);
+    const mk = getMkContainer(nodes)!;
+    assert.ok(mk, 'expected mk marketplace container');
+    assert.ok(
+      mk.description && mk.description.includes('plugins enabled'),
+      `description should contain "plugins enabled", got: "${mk.description}"`
+    );
+    assert.ok(
+      mk.description && mk.description.includes('update'),
+      `description should contain "update", got: "${mk.description}"`
+    );
+  });
+
+  it('AC-CNT-4: meta WITHOUT enabled map -> Plugins root description does NOT include "plugins enabled"', () => {
+    const infoA = makeInstalledInfo('a', '/p/cache/mk/a/1.0');
+    const infoB = makeInstalledInfo('b', '/p/cache/mk/b/1.0');
+    // No enabled map provided
+    const meta = makePluginMetaWithEnabled({ a: infoA, b: infoB }, []);
+    const nodes = buildTreeNodes([], meta);
+    const plugins = getPluginsContainer(nodes)!;
+    assert.ok(plugins, 'expected Plugins container');
+    assert.ok(
+      !plugins.description || !plugins.description.includes('plugins enabled'),
+      `Plugins root description should NOT include "plugins enabled", got: "${plugins.description}"`
+    );
+  });
+
+  it('AC-CNT-5: empty known marketplace -> description === "(no plugins installed)"', () => {
+    const marketplaces = new Map([
+      ['empty-mk', { name: 'empty-mk', installLocation: '/p/empty-mk', lastUpdated: '' } as import('../../src/core/pluginMetadata').MarketplaceInfo]
+    ]);
+    const enabledMap = new Map<string, boolean>();
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map(),
+      outdated: new Set(),
+      enabled: enabledMap,
+      marketplaces
+    };
+    const nodes = buildTreeNodes([], meta);
+    const plugins = getPluginsContainer(nodes)!;
+    assert.ok(plugins, 'expected Plugins container');
+    const emptyMk = (plugins.children as ContainerNodeDescriptor[]).find(c => c.label === 'empty-mk');
+    assert.ok(emptyMk, 'expected empty-mk marketplace folder');
+    assert.strictEqual(emptyMk!.description, '(no plugins installed)', 'empty marketplace description must be "(no plugins installed)"');
   });
 });

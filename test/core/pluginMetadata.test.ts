@@ -4,7 +4,10 @@ import { makeTempDir, writeFile } from './fixtures';
 import {
   readInstalledPlugins,
   readCatalogVersions,
+  readCatalogPlugins,
   isOutdated,
+  readEnabledPlugins,
+  readKnownMarketplaces,
   InstalledPluginInfo
 } from '../../src/core/pluginMetadata';
 
@@ -329,5 +332,326 @@ describe('isOutdated', () => {
 
   it('AC-PM9d: returns false when catalog version is "unknown"', () => {
     assert.strictEqual(isOutdated(makeInfo('1.0.0'), 'unknown'), false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// readEnabledPlugins
+// ---------------------------------------------------------------------------
+
+describe('readEnabledPlugins', () => {
+  it('AC-EN-1: parses enabledPlugins map from settings.json returning id->boolean', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'settings.json');
+      writeFile(filePath, JSON.stringify({
+        enabledPlugins: {
+          'a@mk': true,
+          'b@mk': false
+        }
+      }));
+
+      const result = readEnabledPlugins(filePath);
+
+      assert.ok(result instanceof Map, 'should return a Map');
+      assert.strictEqual(result.size, 2, 'should have two entries');
+      assert.strictEqual(result.get('a@mk'), true, 'a@mk should be true');
+      assert.strictEqual(result.get('b@mk'), false, 'b@mk should be false');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC-EN-1b: skips non-boolean values in enabledPlugins', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'settings.json');
+      writeFile(filePath, JSON.stringify({
+        enabledPlugins: {
+          'a@mk': true,
+          'b@mk': 'yes',
+          'c@mk': 1,
+          'd@mk': null
+        }
+      }));
+
+      const result = readEnabledPlugins(filePath);
+      assert.strictEqual(result.size, 1, 'only boolean values kept');
+      assert.strictEqual(result.get('a@mk'), true);
+      assert.strictEqual(result.has('b@mk'), false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC-EN-2a: returns empty Map when file does not exist', () => {
+    const result = readEnabledPlugins('/nonexistent/path/settings.json');
+    assert.ok(result instanceof Map);
+    assert.strictEqual(result.size, 0);
+  });
+
+  it('AC-EN-2b: returns empty Map when file is malformed JSON', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'settings.json');
+      writeFile(filePath, 'not valid json {{{');
+
+      const result = readEnabledPlugins(filePath);
+      assert.ok(result instanceof Map);
+      assert.strictEqual(result.size, 0);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC-EN-2c: returns empty Map when enabledPlugins key is missing', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'settings.json');
+      writeFile(filePath, JSON.stringify({ someOtherKey: {} }));
+
+      const result = readEnabledPlugins(filePath);
+      assert.ok(result instanceof Map);
+      assert.strictEqual(result.size, 0);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC-EN-2d: returns empty Map when enabledPlugins is an array (not an object)', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'settings.json');
+      writeFile(filePath, JSON.stringify({ enabledPlugins: ['a@mk'] }));
+
+      const result = readEnabledPlugins(filePath);
+      assert.ok(result instanceof Map);
+      assert.strictEqual(result.size, 0);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// readKnownMarketplaces
+// ---------------------------------------------------------------------------
+
+describe('readKnownMarketplaces', () => {
+  it('AC-MK-1a: parses top-level object and returns name->MarketplaceInfo with correct fields', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'known_marketplaces.json');
+      writeFile(filePath, JSON.stringify({
+        'mk-a': { installLocation: '/p/mk-a', lastUpdated: '2026-01-01T00:00:00Z' },
+        'mk-b': {}
+      }));
+
+      const result = readKnownMarketplaces(filePath);
+
+      assert.ok(result instanceof Map, 'should return a Map');
+      assert.strictEqual(result.size, 2, 'should have two entries');
+
+      assert.ok(result.has('mk-a'), 'should have mk-a');
+      const mkA = result.get('mk-a')!;
+      assert.strictEqual(mkA.name, 'mk-a');
+      assert.strictEqual(mkA.installLocation, '/p/mk-a');
+      assert.strictEqual(mkA.lastUpdated, '2026-01-01T00:00:00Z');
+
+      assert.ok(result.has('mk-b'), 'should have mk-b (empty value object)');
+      const mkB = result.get('mk-b')!;
+      assert.strictEqual(mkB.name, 'mk-b');
+      assert.strictEqual(mkB.installLocation, '', 'missing installLocation defaults to empty string');
+      assert.strictEqual(mkB.lastUpdated, '', 'missing lastUpdated defaults to empty string');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC-MK-1b: returns empty Map when file does not exist', () => {
+    const result = readKnownMarketplaces('/nonexistent/path/known_marketplaces.json');
+    assert.ok(result instanceof Map);
+    assert.strictEqual(result.size, 0);
+  });
+
+  it('AC-MK-1c: returns empty Map when file contains malformed JSON', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'known_marketplaces.json');
+      writeFile(filePath, 'not valid json {{{');
+
+      const result = readKnownMarketplaces(filePath);
+      assert.ok(result instanceof Map);
+      assert.strictEqual(result.size, 0);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC-MK-1d: returns empty Map when top-level value is a JSON array (not an object)', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'known_marketplaces.json');
+      writeFile(filePath, JSON.stringify(['mk-a', 'mk-b']));
+
+      const result = readKnownMarketplaces(filePath);
+      assert.ok(result instanceof Map);
+      assert.strictEqual(result.size, 0);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC-MK-1e: skips entries whose value is not an object (e.g. string or null)', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'known_marketplaces.json');
+      writeFile(filePath, JSON.stringify({
+        'mk-a': { installLocation: '/p/mk-a', lastUpdated: '2026-01-01T00:00:00Z' },
+        'bad-entry': 'a string value',
+        'null-entry': null
+      }));
+
+      const result = readKnownMarketplaces(filePath);
+      assert.strictEqual(result.size, 1, 'should only include the valid entry');
+      assert.ok(result.has('mk-a'));
+      assert.ok(!result.has('bad-entry'));
+      assert.ok(!result.has('null-entry'));
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// readCatalogPlugins
+// ---------------------------------------------------------------------------
+
+describe('readCatalogPlugins', () => {
+  it('AC-CAT-1: parses catalog.plugins object and returns entries with correct fields', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'plugin-catalog-cache.json');
+      writeFile(filePath, JSON.stringify({
+        catalog: {
+          plugins: {
+            'foo@mk': { plugin: 'foo', version: '1.2.0', marketplace_entry: { description: 'Foo desc' } },
+            'bar@mk': { plugin: 'bar', version: '2.0.0' },
+            'noatkey': { plugin: 'noatkey', version: '0.1.0' }
+          }
+        }
+      }));
+
+      const result = readCatalogPlugins(filePath);
+
+      assert.strictEqual(result.length, 3, 'should return 3 entries');
+
+      const foo = result.find(p => p.id === 'foo@mk');
+      assert.ok(foo, 'should have foo@mk entry');
+      assert.strictEqual(foo!.name, 'foo');
+      assert.strictEqual(foo!.marketplace, 'mk');
+      assert.strictEqual(foo!.version, '1.2.0');
+      assert.strictEqual(foo!.description, 'Foo desc');
+
+      const bar = result.find(p => p.id === 'bar@mk');
+      assert.ok(bar, 'should have bar@mk entry');
+      assert.strictEqual(bar!.name, 'bar');
+      assert.strictEqual(bar!.marketplace, 'mk');
+      assert.strictEqual(bar!.version, '2.0.0');
+      assert.strictEqual(bar!.description, undefined, 'bar has no marketplace_entry so description should be undefined');
+
+      const noat = result.find(p => p.id === 'noatkey');
+      assert.ok(noat, 'should have noatkey entry');
+      assert.strictEqual(noat!.marketplace, '', 'key with no @ should have empty marketplace');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC-CAT-3: entry whose key has no @ still parses with marketplace=""', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'plugin-catalog-cache.json');
+      writeFile(filePath, JSON.stringify({
+        catalog: {
+          plugins: {
+            'standalone': { plugin: 'standalone', version: '1.0.0' }
+          }
+        }
+      }));
+
+      const result = readCatalogPlugins(filePath);
+
+      assert.strictEqual(result.length, 1);
+      assert.strictEqual(result[0].id, 'standalone');
+      assert.strictEqual(result[0].name, 'standalone');
+      assert.strictEqual(result[0].marketplace, '');
+      assert.strictEqual(result[0].version, '1.0.0');
+      assert.strictEqual(result[0].description, undefined);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC-CAT-2a: returns [] when file does not exist', () => {
+    const result = readCatalogPlugins('/nonexistent/path/plugin-catalog-cache.json');
+    assert.ok(Array.isArray(result));
+    assert.strictEqual(result.length, 0);
+  });
+
+  it('AC-CAT-2b: returns [] when file contains malformed JSON', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'plugin-catalog-cache.json');
+      writeFile(filePath, 'not valid json {{{');
+
+      const result = readCatalogPlugins(filePath);
+      assert.ok(Array.isArray(result));
+      assert.strictEqual(result.length, 0);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC-CAT-2c: returns [] when file is empty object {}', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'plugin-catalog-cache.json');
+      writeFile(filePath, JSON.stringify({}));
+
+      const result = readCatalogPlugins(filePath);
+      assert.ok(Array.isArray(result));
+      assert.strictEqual(result.length, 0);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC-CAT-2d: returns [] when catalog exists but has no plugins key', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'plugin-catalog-cache.json');
+      writeFile(filePath, JSON.stringify({ catalog: {} }));
+
+      const result = readCatalogPlugins(filePath);
+      assert.ok(Array.isArray(result));
+      assert.strictEqual(result.length, 0);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC-CAT-2e: returns [] when catalog.plugins is an array (not an object)', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'plugin-catalog-cache.json');
+      writeFile(filePath, JSON.stringify({ catalog: { plugins: ['foo@mk', 'bar@mk'] } }));
+
+      const result = readCatalogPlugins(filePath);
+      assert.ok(Array.isArray(result));
+      assert.strictEqual(result.length, 0);
+    } finally {
+      cleanup();
+    }
   });
 });

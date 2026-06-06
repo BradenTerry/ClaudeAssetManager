@@ -19,12 +19,12 @@ export class ContainerNode extends vscode.TreeItem {
   readonly children: TreeNode[];
 
   constructor(desc: ContainerNodeDescriptor) {
-    super(
-      desc.label,
-      desc.containerKind === 'working-directory'
-        ? vscode.TreeItemCollapsibleState.Expanded
-        : vscode.TreeItemCollapsibleState.Collapsed
-    );
+    const collapsible = desc.containerKind === 'working-directory'
+      ? vscode.TreeItemCollapsibleState.Expanded
+      : (desc.containerKind === 'marketplace' && desc.children.length === 0
+          ? vscode.TreeItemCollapsibleState.None
+          : vscode.TreeItemCollapsibleState.Collapsed);
+    super(desc.label, collapsible);
     this.containerKind = desc.containerKind;
     this.contextValue = desc.contextValue ?? 'assetContainer';
     this.iconPath = new vscode.ThemeIcon('folder');
@@ -67,8 +67,16 @@ export class PluginFolderNode extends vscode.TreeItem {
     this.pluginName = desc.pluginName;
     this.pluginId = desc.pluginId;
     this.dirPath = desc.dirPath;
-    this.contextValue = desc.outdated ? 'assetPluginFolderOutdated' : 'assetPluginFolder';
-    this.iconPath = new vscode.ThemeIcon('folder');
+    const enTok = desc.enabled === false ? 'Disabled' : 'Enabled';
+    const outTok = desc.outdated ? 'Outdated' : '';
+    this.contextValue = `assetPluginFolder${enTok}${outTok}`;
+    if (desc.enabled === false) {
+      this.iconPath = new vscode.ThemeIcon('circle-slash', new vscode.ThemeColor('disabledForeground'));
+    } else if (desc.enabled === true) {
+      this.iconPath = new vscode.ThemeIcon('pass-filled', new vscode.ThemeColor('charts.green'));
+    } else {
+      this.iconPath = new vscode.ThemeIcon('folder');
+    }
     if (desc.dirPath !== undefined) {
       this.tooltip = desc.dirPath;
     }
@@ -131,7 +139,7 @@ export class FsFileNode extends vscode.TreeItem {
       : (underPlugins ? 'fsFilePlugin' : 'fsFile');
     // Open with the user's default editor; "Open Preview" stays in the context menu for .md.
     this.command = {
-      command: 'claudeAssets.openDefault',
+      command: isMarkdown ? 'claudeAssets.openMarkdown' : 'claudeAssets.openDefault',
       title: 'Open',
       arguments: [filePath]
     };

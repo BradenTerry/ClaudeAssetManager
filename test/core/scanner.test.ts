@@ -615,3 +615,106 @@ description: A real skill
     assert.ok(realSkill, 'real-skill should still be found after cycle detection');
   });
 });
+
+describe('Scanner -- AC-Depth', () => {
+  let cleanup: () => void;
+  let root: string;
+
+  beforeEach(() => {
+    const tmp = makeTempDir();
+    root = tmp.root;
+    cleanup = tmp.cleanup;
+  });
+
+  afterEach(() => cleanup());
+
+  it('AC-D1: asset deeply nested inside .claude is found even at maxDepth: 1', () => {
+    const ws = path.join(root, 'ws');
+    // ws/.claude/agents/a/b/c/d/deep-agent.md
+    writeFile(path.join(ws, '.claude', 'agents', 'a', 'b', 'c', 'd', 'deep-agent.md'), `---
+name: deep-agent
+description: x
+---
+`);
+
+    const roots = buildScanRoots(path.join(root, '.claude-none'), [], [ws]);
+    const assets = scan(roots, { excludeDirs: DEFAULT_EXCLUDE, followSymlinks: true, maxDepth: 1 });
+
+    const agent = assets.find(a => a.name === 'deep-agent');
+    assert.ok(agent, 'deep-agent must be found even though it is deeply nested inside .claude, maxDepth: 1');
+  });
+
+  it('AC-D2: loose asset beyond budget is pruned at small limit but found at large limit', () => {
+    // ws/a/b/c/skills/loose/SKILL.md -- no .claude segment, depth 3 from ws root
+    const ws = path.join(root, 'ws');
+    writeFile(path.join(ws, 'a', 'b', 'c', 'skills', 'loose', 'SKILL.md'), `---
+name: loose
+description: x
+---
+`);
+
+    // With maxDepth: 2, depth of ws/a/b/c is 3 which exceeds 2, so pruned
+    const roots2 = buildScanRoots(path.join(root, '.claude-none'), [], [ws]);
+    const assetsSmall = scan(roots2, { excludeDirs: DEFAULT_EXCLUDE, followSymlinks: true, maxDepth: 2 });
+    assert.strictEqual(assetsSmall.find(a => a.name === 'loose'), undefined,
+      'loose must NOT be found with maxDepth: 2 (path depth exceeds budget)');
+
+    // With maxDepth: 10, all depths allowed
+    const assetsLarge = scan(roots2, { excludeDirs: DEFAULT_EXCLUDE, followSymlinks: true, maxDepth: 10 });
+    assert.ok(assetsLarge.find(a => a.name === 'loose'),
+      'loose must be found with maxDepth: 10');
+  });
+
+  it('AC-D3: .claude dir whose parent chain exceeds maxDepth is not reached', () => {
+    // ws/a/b/c/d/.claude/agents/x.md -- reaching .claude requires depth 4
+    const ws = path.join(root, 'ws');
+    writeFile(path.join(ws, 'a', 'b', 'c', 'd', '.claude', 'agents', 'x.md'), `---
+name: x
+description: x
+---
+`);
+
+    const roots = buildScanRoots(path.join(root, '.claude-none'), [], [ws]);
+
+    const assetsSmall = scan(roots, { excludeDirs: DEFAULT_EXCLUDE, followSymlinks: true, maxDepth: 2 });
+    assert.strictEqual(assetsSmall.find(a => a.name === 'x'), undefined,
+      'x must NOT be found with maxDepth: 2 (parent chain depth 4 > 2)');
+
+    const assetsLarge = scan(roots, { excludeDirs: DEFAULT_EXCLUDE, followSymlinks: true, maxDepth: 6 });
+    assert.ok(assetsLarge.find(a => a.name === 'x'),
+      'x must be found with maxDepth: 6');
+  });
+
+  it('AC-D4: global root (special root) is never depth-limited', () => {
+    const claudeDir = path.join(root, '.claude');
+    buildGlobalClaudeDir(claudeDir);
+    // claudeDir/agents/a/b/c/deep-global.md -- deeply nested under global root
+    writeFile(path.join(claudeDir, 'agents', 'a', 'b', 'c', 'deep-global.md'), `---
+name: deep-global
+description: x
+---
+`);
+
+    const roots = buildScanRoots(claudeDir, [], []);
+    const assets = scan(roots, { excludeDirs: DEFAULT_EXCLUDE, followSymlinks: true, maxDepth: 1 });
+
+    assert.ok(assets.find(a => a.name === 'deep-global'),
+      'deep-global must be found even with maxDepth: 1 because global root is never depth-limited');
+  });
+
+  it('AC-D5: project one level under workspace root with .claude is found at maxDepth: 1', () => {
+    // ws/proj/.claude/agents/p.md -- depth 1 to reach proj, then entering .claude flips to inside
+    const ws = path.join(root, 'ws');
+    writeFile(path.join(ws, 'proj', '.claude', 'agents', 'p.md'), `---
+name: p
+description: x
+---
+`);
+
+    const roots = buildScanRoots(path.join(root, '.claude-none'), [], [ws]);
+    const assets = scan(roots, { excludeDirs: DEFAULT_EXCLUDE, followSymlinks: true, maxDepth: 1 });
+
+    assert.ok(assets.find(a => a.name === 'p'),
+      'p must be found: proj is depth-1 descent, entering .claude flips to inside, unlimited from there');
+  });
+});

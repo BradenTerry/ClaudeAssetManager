@@ -72,6 +72,12 @@
         "category": "Claude Assets"
       },
       {
+        "command": "claudeAssets.deleteFile",
+        "title": "Delete",
+        "icon": "$(trash)",
+        "category": "Claude Assets"
+      },
+      {
         "command": "claudeAssets.updatePlugin",
         "title": "Update Plugin",
         "icon": "$(arrow-circle-down)",
@@ -122,6 +128,11 @@
           "command": "claudeAssets.updateAllPlugins",
           "when": "view == claudeAssets.global && viewItem == assetPluginsRootOutdated",
           "group": "manage"
+        },
+        {
+          "command": "claudeAssets.deleteFile",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config)-/ || viewItem == fsFile || viewItem == fsFileMd || viewItem == fsDir)",
+          "group": "zzz_delete"
         }
       ]
     },

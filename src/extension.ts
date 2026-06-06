@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as os from 'os';
 import * as path from 'path';
+import * as fs from 'fs';
 import { execFile } from 'child_process';
 import { scan } from './core/scanner';
 import { buildScanRoots } from './core/scanRoots';
@@ -224,6 +225,39 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('claudeAssets.updateAllPlugins', async () => {
       const ids = outdatedPlugins.map(p => p.id);
       await performUpdates(ids, ids.length > 0 ? `Plugins to update:\n${ids.join('\n')}` : '');
+    }),
+
+    vscode.commands.registerCommand('claudeAssets.deleteFile', async (arg: unknown) => {
+      const targetPath = resolveFsPath(arg);
+      if (!targetPath) {
+        vscode.window.showErrorMessage('Could not delete: no path.');
+        return;
+      }
+      let isDir: boolean;
+      try {
+        isDir = fs.statSync(targetPath).isDirectory();
+      } catch {
+        vscode.window.showErrorMessage(`Could not delete: ${targetPath} no longer exists.`);
+        runScan().catch(() => { /* ignore */ });
+        return;
+      }
+      const name = path.basename(targetPath);
+      const kind = isDir ? 'folder' : 'file';
+      const confirm = await vscode.window.showWarningMessage(
+        `Delete ${kind} "${name}"?`,
+        { modal: true, detail: `${targetPath}\n\nThis moves it to the trash.` },
+        'Delete'
+      );
+      if (confirm !== 'Delete') {
+        return;
+      }
+      try {
+        await vscode.workspace.fs.delete(vscode.Uri.file(targetPath), { recursive: true, useTrash: true });
+      } catch (err) {
+        vscode.window.showErrorMessage(`Could not delete ${name}: ${err}`);
+        return;
+      }
+      await runScan();
     }),
 
     vscode.commands.registerCommand('claudeAssets.addDirectory', async () => {

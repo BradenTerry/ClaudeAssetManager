@@ -27,11 +27,13 @@
   "engines": {
     "vscode": "^1.90.0"
   },
-  "categories": ["Other"],
+  "categories": [
+    "Other"
+  ],
   "activationEvents": [
     "onStartupFinished"
   ],
-  "main": "./out/extension.js",
+  "main": "./dist/extension.js",
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -182,7 +184,9 @@
       "properties": {
         "claudeAssets.directories": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "Additional directories to scan for Claude assets."
         },
@@ -193,10 +197,20 @@
         },
         "claudeAssets.excludeDirs": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [
-            "node_modules", ".git", "bin", "obj", "dist",
-            "target", ".venv", "venv", ".idea", ".vs"
+            "node_modules",
+            ".git",
+            "bin",
+            "obj",
+            "dist",
+            "target",
+            ".venv",
+            "venv",
+            ".idea",
+            ".vs"
           ],
           "description": "Directory names to exclude from recursive scans."
         }
@@ -206,14 +220,16 @@
   "scripts": {
     "compile": "tsc -p .",
     "watch": "tsc -p . --watch",
+    "bundle": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node20 --minify",
     "test": "npm run compile && TS_NODE_PROJECT=tsconfig.test.json mocha",
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run bundle",
     "package": "npx --yes @vscode/vsce package"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.6",
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.90.0",
+    "esbuild": "^0.28.0",
     "mocha": "^10.4.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5"

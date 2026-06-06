@@ -20,8 +20,8 @@ export enum NodeKind {
 
 export interface ContainerNodeDescriptor {
   kind: NodeKind.Container;
-  /** 'global' | 'plugins' | 'project' | 'working-directory' | 'projects' */
-  containerKind: 'global' | 'plugins' | 'project' | 'working-directory' | 'projects';
+  /** 'global' | 'plugins' | 'marketplace' | 'project' | 'working-directory' | 'projects' */
+  containerKind: 'global' | 'plugins' | 'marketplace' | 'project' | 'working-directory' | 'projects';
   label: string;
   /**
    * For global: flat leaves (ClaudeMd/Config), then type groups (Skills/Subagents/Commands/Memory),
@@ -40,7 +40,7 @@ export interface ContainerNodeDescriptor {
 
 export interface WorktreesFolderNodeDescriptor {
   kind: NodeKind.WorktreesFolder;
-  label: 'Worktrees';
+  label: 'worktrees';
   children: WorktreeNameFolderNodeDescriptor[];
 }
 
@@ -58,6 +58,8 @@ export interface PluginFolderNodeDescriptor {
   pluginId?: string;
   label: string;
   children: GroupNodeDescriptor[];
+  /** When set, the folder renders this install directory's files lazily (metadata-driven view). */
+  dirPath?: string;
   /** Installed version display string (present only for installed plugins) */
   description?: string;
   /** True when the plugin has a newer version available in the catalog cache */
@@ -143,7 +145,7 @@ function buildProjectChildren(
     }));
     children.push({
       kind: NodeKind.WorktreesFolder as NodeKind.WorktreesFolder,
-      label: 'Worktrees',
+      label: 'worktrees',
       children: worktreeNameFolders
     });
   }
@@ -191,7 +193,8 @@ function buildContextValue(asset: ClaudeAsset): string {
 
 function buildAssetNode(asset: ClaudeAsset): AssetNodeDescriptor {
   const isConfig = asset.type === AssetType.Config;
-  const commandId = isConfig ? 'claudeAssets.openFile' : 'claudeAssets.openPreview';
+  // Open with the user's default editor for the file type; config (JSON) opens as a file.
+  const commandId = isConfig ? 'claudeAssets.openFile' : 'claudeAssets.openDefault';
   return {
     kind: NodeKind.Asset,
     asset,
@@ -377,10 +380,90 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
     }
   }
 
-  // Build Plugins folder node (nested inside Global) when any plugin assets exist
+  // Build the Plugins folder (nested inside Global).
+  //
+  // With plugin metadata we drive the list from installed_plugins.json: every
+  // installed plugin shows (even asset-less ones like LSP plugins), uninstalled
+  // leftovers on disk are hidden, plugins are nested under their source marketplace
+  // folder (mirroring plugins/cache/<marketplace>/<plugin>), and each plugin folder
+  // renders its install directory's files lazily.
+  //
+  // Without metadata (unit tests) we fall back to the asset-derived view: a flat list
+  // of plugin folders whose children are the scanned assets grouped by type.
   let pluginsFolderNode: ContainerNodeDescriptor | undefined;
-  if (pluginAssets.length > 0) {
-    // Group plugin assets by plugin name
+
+  if (installedPlugins.size > 0) {
+    const updatableCount = [...installedPlugins.keys()].filter(n => outdatedPlugins.has(n)).length;
+
+    const buildPluginFolder = (info: InstalledPluginInfo): PluginFolderNodeDescriptor => {
+      const isOut = outdatedPlugins.has(info.name);
+      const descStr = isOut ? `${info.version} - update available ↓` : info.version;
+      return {
+        kind: NodeKind.PluginFolder as NodeKind.PluginFolder,
+        pluginName: info.name,
+        pluginId: info.id,
+        label: info.name,
+        children: [],
+        description: descStr,
+        outdated: isOut || undefined,
+        dirPath: info.installPath || undefined
+      };
+    };
+
+    // Group installed plugins by their source marketplace.
+    const byMarketplace = new Map<string, InstalledPluginInfo[]>();
+    for (const info of installedPlugins.values()) {
+      const mk = info.marketplace || '(local)';
+      const group = byMarketplace.get(mk);
+      if (group) {
+        group.push(info);
+      } else {
+        byMarketplace.set(mk, [info]);
+      }
+    }
+
+    const marketplaceFolders: ContainerNodeDescriptor[] = [...byMarketplace.keys()]
+      .sort((a, b) => a.localeCompare(b))
+      .map(mk => {
+        const infos = byMarketplace.get(mk)!.slice().sort((a, b) => a.name.localeCompare(b.name));
+        // Marketplace dir on disk is the parent of <plugin>/<version>: .../plugins/cache/<marketplace>.
+        const sample = infos.find(i => i.installPath);
+        const mkDir = sample ? path.dirname(path.dirname(sample.installPath)) : undefined;
+        const mkOutdated = infos.filter(i => outdatedPlugins.has(i.name)).length;
+        return {
+          kind: NodeKind.Container as NodeKind.Container,
+          containerKind: 'marketplace' as const,
+          label: mk,
+          children: infos.map(buildPluginFolder),
+          description: mkOutdated > 0
+            ? `${mkOutdated} Update${mkOutdated === 1 ? '' : 's'} available ↓`
+            : undefined,
+          // Outdated variant gates the marketplace-level "Update Plugins" command.
+          contextValue: mkOutdated > 0 ? 'assetMarketplaceOutdated' : 'assetMarketplace',
+          dirPath: mkDir
+        };
+      });
+
+    // Plugins root for Reveal (.../plugins), derived from any install path.
+    const anyInstall = [...installedPlugins.values()].find(i => i.installPath);
+    const pluginsRoot = anyInstall
+      ? deriveSegmentRoot(anyInstall.installPath, 'plugins')
+      : (pluginAssets.length > 0 ? deriveSegmentRoot(pluginAssets[0].filePath, 'plugins') : undefined);
+
+    pluginsFolderNode = {
+      kind: NodeKind.Container,
+      containerKind: 'plugins',
+      label: 'plugins',
+      children: marketplaceFolders,
+      description: updatableCount > 0
+        ? `${updatableCount} Update${updatableCount === 1 ? '' : 's'} available ↓`
+        : undefined,
+      // Outdated variant gates the "Update All" command; both variants are reveal-able.
+      contextValue: updatableCount > 0 ? 'assetPluginsRootOutdated' : 'assetPluginsRoot',
+      dirPath: pluginsRoot
+    };
+  } else if (pluginAssets.length > 0) {
+    // Asset-derived fallback (no metadata): flat plugin folders with type-group children.
     const byPlugin = new Map<string, ClaudeAsset[]>();
     for (const asset of pluginAssets) {
       const pluginName = derivePluginName(asset.filePath);
@@ -391,54 +474,19 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
         byPlugin.set(pluginName, [asset]);
       }
     }
-
     const sortedPluginNames = [...byPlugin.keys()].sort((a, b) => a.localeCompare(b));
-
-    const pluginFolders: PluginFolderNodeDescriptor[] = sortedPluginNames.map(pluginName => {
-      const pAssets = byPlugin.get(pluginName)!;
-
-      // Plugin assets never include ClaudeMd or Config, so buildTypeGroups returns only GroupNodeDescriptors
-      const pluginGroups = buildTypeGroups(pAssets) as GroupNodeDescriptor[];
-
-      const info = installedPlugins.get(pluginName);
-      if (info) {
-        const isOut = outdatedPlugins.has(pluginName);
-        // Show the source marketplace to the right of the version.
-        const source = info.marketplace ? ` · ${info.marketplace}` : '';
-        const descStr = isOut
-          ? `${info.version}${source} - update available ↓`
-          : `${info.version}${source}`;
-        return {
-          kind: NodeKind.PluginFolder as NodeKind.PluginFolder,
-          pluginName,
-          pluginId: info.id,
-          label: pluginName,
-          children: pluginGroups,
-          description: descStr,
-          outdated: isOut || undefined
-        };
-      }
-
-      // Plugin not in installed map: no description
-      return {
-        kind: NodeKind.PluginFolder as NodeKind.PluginFolder,
-        pluginName,
-        label: pluginName,
-        children: pluginGroups
-      };
-    });
-
-    const updatableCount = pluginFolders.filter(p => p.outdated).length;
+    const pluginFolders: PluginFolderNodeDescriptor[] = sortedPluginNames.map(pluginName => ({
+      kind: NodeKind.PluginFolder as NodeKind.PluginFolder,
+      pluginName,
+      label: pluginName,
+      children: buildTypeGroups(byPlugin.get(pluginName)!) as GroupNodeDescriptor[]
+    }));
     pluginsFolderNode = {
       kind: NodeKind.Container,
       containerKind: 'plugins',
       label: 'plugins',
       children: pluginFolders,
-      description: updatableCount > 0
-        ? `${updatableCount} Update${updatableCount === 1 ? '' : 's'} available ↓`
-        : undefined,
-      // Outdated variant gates the "Update All" command; both variants are reveal-able.
-      contextValue: updatableCount > 0 ? 'assetPluginsRootOutdated' : 'assetPluginsRoot',
+      contextValue: 'assetPluginsRoot',
       dirPath: deriveSegmentRoot(pluginAssets[0].filePath, 'plugins')
     };
   }

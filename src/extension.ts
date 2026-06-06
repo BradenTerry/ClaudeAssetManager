@@ -7,7 +7,7 @@ import { scan } from './core/scanner';
 import { buildScanRoots } from './core/scanRoots';
 import { readInstalledPlugins, readCatalogVersions, isOutdated, InstalledPluginInfo } from './core/pluginMetadata';
 import { AssetTreeProvider } from './tree/assetTreeProvider';
-import { AssetNode, PluginFolderNode } from './tree/nodes';
+import { AssetNode, PluginFolderNode, ContainerNode } from './tree/nodes';
 import { watchRoots } from './services/watcher';
 import {
   getDirectories,
@@ -177,6 +177,19 @@ export function activate(context: vscode.ExtensionContext): void {
       });
     }),
 
+    vscode.commands.registerCommand('claudeAssets.openDefault', (arg: unknown) => {
+      const filePath = resolveFsPath(arg);
+      if (!filePath) {
+        vscode.window.showErrorMessage('Could not open: no file path.');
+        return;
+      }
+      // vscode.open honors the user's configured default editor for the file type.
+      const uri = vscode.Uri.file(filePath);
+      vscode.commands.executeCommand('vscode.open', uri).then(undefined, err => {
+        vscode.window.showErrorMessage(`Could not open file: ${err}`);
+      });
+    }),
+
     vscode.commands.registerCommand('claudeAssets.openFile', (arg: unknown) => {
       const filePath = resolveFsPath(arg);
       if (!filePath) {
@@ -227,10 +240,67 @@ export function activate(context: vscode.ExtensionContext): void {
       await performUpdates(ids, ids.length > 0 ? `Plugins to update:\n${ids.join('\n')}` : '');
     }),
 
+    vscode.commands.registerCommand('claudeAssets.updateMarketplacePlugins', async (node?: ContainerNode) => {
+      const mk = typeof node?.label === 'string' ? node.label : undefined;
+      if (!mk) {
+        vscode.window.showErrorMessage('Claude Assets: could not determine which marketplace to update.');
+        return;
+      }
+      const ids = outdatedPlugins.filter(p => (p.marketplace || '(local)') === mk).map(p => p.id);
+      await performUpdates(ids, ids.length > 0 ? `Plugins to update in ${mk}:\n${ids.join('\n')}` : '');
+    }),
+
+    vscode.commands.registerCommand('claudeAssets.uninstallPlugin', async (node?: PluginFolderNode) => {
+      const id = node?.pluginId ?? node?.pluginName;
+      if (!id) {
+        vscode.window.showErrorMessage('Claude Assets: could not determine which plugin to uninstall.');
+        return;
+      }
+      const name = node?.pluginName ?? id;
+      const confirm = await vscode.window.showWarningMessage(
+        `Uninstall plugin "${name}"?`,
+        { modal: true, detail: `This runs: claude plugin uninstall ${id}` },
+        'Uninstall'
+      );
+      if (confirm !== 'Uninstall') {
+        return;
+      }
+      const result = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `Claude Assets: uninstalling ${name}`,
+          cancellable: false
+        },
+        () => new Promise<{ ok: boolean; output: string }>(resolve => {
+          execFile('claude', ['plugin', 'uninstall', id], { timeout: 120000 }, (err, stdout, stderr) => {
+            resolve({ ok: !err, output: `${stdout ?? ''}${stderr ?? ''}`.trim() });
+          });
+        })
+      );
+      await runScan();
+      if (result.ok) {
+        vscode.window.showInformationMessage(
+          `Claude Assets: uninstalled ${name}. Restart your Claude Code session to apply.`
+        );
+      } else {
+        vscode.window.showErrorMessage(
+          `Claude Assets: failed to uninstall ${name}. ${result.output || 'unknown error'}`
+        );
+      }
+    }),
+
     vscode.commands.registerCommand('claudeAssets.deleteFile', async (arg: unknown) => {
       const targetPath = resolveFsPath(arg);
       if (!targetPath) {
         vscode.window.showErrorMessage('Could not delete: no path.');
+        return;
+      }
+      // Plugin files are managed by Claude -- never let the user delete inside the plugins tree.
+      const pluginsRoot = path.join(homeClaudeDir, 'plugins');
+      if (targetPath === pluginsRoot || targetPath.startsWith(pluginsRoot + path.sep)) {
+        vscode.window.showInformationMessage(
+          'Plugin files are managed by Claude. Right-click the plugin and choose "Uninstall Plugin" instead.'
+        );
         return;
       }
       let isDir: boolean;

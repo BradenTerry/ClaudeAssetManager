@@ -210,7 +210,7 @@ describe('buildTreeNodes -- Plugins folder children (nested inside Global)', () 
     const assetNode = cmdGroup.children[0] as AssetNodeDescriptor;
     assert.strictEqual(assetNode.kind, NodeKind.Asset);
     assert.ok(assetNode.contextValue.includes('-md-'), 'plugin asset should have -md- contextValue');
-    assert.strictEqual(assetNode.commandId, 'claudeAssets.openPreview');
+    assert.strictEqual(assetNode.commandId, 'claudeAssets.openDefault');
   });
 
   it('uses real plugin path shapes: cache path -> correct plugin name', () => {
@@ -268,7 +268,7 @@ describe('buildTreeNodes -- project containers', () => {
     const cmdGroup = projContainer.children[0] as GroupNodeDescriptor;
     const assetNode = cmdGroup.children[0] as AssetNodeDescriptor;
     assert.ok(assetNode.contextValue.includes('-md-'), 'command asset should have -md- contextValue');
-    assert.strictEqual(assetNode.commandId, 'claudeAssets.openPreview');
+    assert.strictEqual(assetNode.commandId, 'claudeAssets.openDefault');
     assert.strictEqual(assetNode.filePath, filePath);
   });
 
@@ -509,144 +509,133 @@ function getPluginsContainer(nodes: ReturnType<typeof buildTreeNodes>): Containe
   return global.children.find(c => c.kind === NodeKind.Container && (c as ContainerNodeDescriptor).containerKind === 'plugins') as ContainerNodeDescriptor | undefined;
 }
 
+// Collect all PluginFolder descriptors under the Plugins container, flattening the
+// marketplace sub-folders (metadata-driven view) or returning direct children (fallback).
+function getPluginFolders(nodes: ReturnType<typeof buildTreeNodes>): PluginFolderNodeDescriptor[] {
+  const plugins = getPluginsContainer(nodes);
+  if (!plugins) return [];
+  const out: PluginFolderNodeDescriptor[] = [];
+  for (const child of plugins.children) {
+    if (child.kind === NodeKind.PluginFolder) {
+      out.push(child as PluginFolderNodeDescriptor);
+    } else if (child.kind === NodeKind.Container && (child as ContainerNodeDescriptor).containerKind === 'marketplace') {
+      for (const f of (child as ContainerNodeDescriptor).children) {
+        if (f.kind === NodeKind.PluginFolder) out.push(f as PluginFolderNodeDescriptor);
+      }
+    }
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Plugin folder -- direct children of Plugins container (no Installed/Available split)
 // ---------------------------------------------------------------------------
 
-describe('buildTreeNodes -- Plugins container has direct plugin folder children', () => {
-  it('AC-TREE-NEW1: Plugins container children are PluginFolder nodes directly (no sub-sections)', () => {
-    const assets = [makePluginAsset('analyzer', CACHE_ASSET_SC)];
-    const meta = makePluginMeta({
-      'skill-creator': makeInstalledInfo('skill-creator', INSTALL_PATH_SC)
-    });
-    const nodes = buildTreeNodes(assets, meta);
+describe('buildTreeNodes -- Plugins container (metadata-driven, nested by marketplace)', () => {
+  it('AC-TREE-NEW1: plugins are nested under their source marketplace folder', () => {
+    const meta = makePluginMeta({ 'skill-creator': makeInstalledInfo('skill-creator', INSTALL_PATH_SC) });
+    const nodes = buildTreeNodes([], meta);
     const plugins = getPluginsContainer(nodes)!;
     assert.ok(plugins, 'expected Plugins container');
-
-    // Children must be PluginFolder nodes, not Container nodes
-    assert.ok(plugins.children.length > 0, 'expected at least one child');
-    const firstChild = plugins.children[0];
-    assert.strictEqual(firstChild.kind, NodeKind.PluginFolder, 'Plugins children should be PluginFolder nodes directly (no Installed/Available sub-sections)');
+    assert.ok(plugins.children.length > 0, 'expected at least one marketplace folder');
+    const mk = plugins.children[0] as ContainerNodeDescriptor;
+    assert.strictEqual(mk.kind, NodeKind.Container);
+    assert.strictEqual(mk.containerKind, 'marketplace');
+    assert.strictEqual(mk.label, 'mk', 'marketplace folder labelled by source');
+    const folder = mk.children[0] as PluginFolderNodeDescriptor;
+    assert.strictEqual(folder.kind, NodeKind.PluginFolder);
+    assert.strictEqual(folder.pluginName, 'skill-creator');
   });
 
-  it('AC-TREE-NEW2: installed plugin folder appears directly under Plugins, sorted alpha', () => {
+  it('AC-TREE-NEW2: installed plugins appear under their marketplace, sorted alpha', () => {
     const installPathFD = '/Users/braden/.claude/plugins/cache/claude-plugins-official/frontend-design/1.0.0';
-    const assetFD = `${installPathFD}/skills/frontend-design/SKILL.md`;
-    const assets = [
-      makePluginAsset('analyzer', CACHE_ASSET_SC),
-      { type: AssetType.Skill, name: 'frontend-design', filePath: assetFD, scope: AssetScope.Plugin, description: undefined, rootPath: PLUGINS_CACHE_ROOT }
-    ];
     const meta = makePluginMeta({
       'skill-creator': makeInstalledInfo('skill-creator', INSTALL_PATH_SC),
       'frontend-design': makeInstalledInfo('frontend-design', installPathFD, '1.0.0')
     });
-    const nodes = buildTreeNodes(assets, meta);
-    const plugins = getPluginsContainer(nodes)!;
-
-    const folders = plugins.children as PluginFolderNodeDescriptor[];
+    const nodes = buildTreeNodes([], meta);
+    const folders = getPluginFolders(nodes);
     assert.strictEqual(folders.length, 2, 'expected 2 plugin folders');
-    // sorted alpha: frontend-design before skill-creator
     assert.strictEqual(folders[0].pluginName, 'frontend-design');
     assert.strictEqual(folders[1].pluginName, 'skill-creator');
   });
 
   it('AC-TREE-NEW3: installed plugin folder has version description', () => {
-    const assets = [makePluginAsset('analyzer', CACHE_ASSET_SC)];
-    const meta = makePluginMeta({
-      'skill-creator': makeInstalledInfo('skill-creator', INSTALL_PATH_SC, 'unknown')
-    });
-    const nodes = buildTreeNodes(assets, meta);
-    const plugins = getPluginsContainer(nodes)!;
-
-    const scFolder = (plugins.children as PluginFolderNodeDescriptor[]).find(f => f.pluginName === 'skill-creator')!;
+    const meta = makePluginMeta({ 'skill-creator': makeInstalledInfo('skill-creator', INSTALL_PATH_SC, 'unknown') });
+    const nodes = buildTreeNodes([], meta);
+    const scFolder = getPluginFolders(nodes).find(f => f.pluginName === 'skill-creator')!;
     assert.ok(scFolder, 'skill-creator folder should exist');
-    assert.ok(scFolder.description, 'installed plugin folder should have a description');
-    assert.ok(
-      scFolder.description!.includes('unknown'),
-      `description should include version. Got: "${scFolder.description}"`
-    );
+    assert.ok(scFolder.description && scFolder.description.includes('unknown'), `description should include version. Got: "${scFolder.description}"`);
   });
 
   it('AC-TREE-NEW3b: installed plugin with version 1.0.0 shows that version in description', () => {
     const installPath = '/Users/braden/.claude/plugins/cache/claude-plugins-official/claude-code-setup/1.0.0';
-    const assetPath = `${installPath}/skills/claude-automation-recommender/SKILL.md`;
-    const assets = [{ type: AssetType.Skill, name: 'claude-automation-recommender', filePath: assetPath, scope: AssetScope.Plugin, description: undefined, rootPath: PLUGINS_CACHE_ROOT }];
-    const meta = makePluginMeta({
-      'claude-code-setup': makeInstalledInfo('claude-code-setup', installPath, '1.0.0')
-    });
-    const nodes = buildTreeNodes(assets, meta);
-    const plugins = getPluginsContainer(nodes)!;
-
-    const folder = (plugins.children as PluginFolderNodeDescriptor[]).find(f => f.pluginName === 'claude-code-setup')!;
+    const meta = makePluginMeta({ 'claude-code-setup': makeInstalledInfo('claude-code-setup', installPath, '1.0.0') });
+    const nodes = buildTreeNodes([], meta);
+    const folder = getPluginFolders(nodes).find(f => f.pluginName === 'claude-code-setup')!;
     assert.ok(folder, 'claude-code-setup folder should exist');
     assert.ok(folder.description!.includes('1.0.0'), `expected description to include "1.0.0", got: "${folder.description}"`);
   });
 
-  it('AC-TREE-NEW4: outdated plugin description includes "update available" and outdated flag is true', () => {
-    const assets = [makePluginAsset('analyzer', CACHE_ASSET_SC)];
-    const meta = makePluginMeta(
-      { 'skill-creator': makeInstalledInfo('skill-creator', INSTALL_PATH_SC, 'unknown') },
-      ['skill-creator']
-    );
-    const nodes = buildTreeNodes(assets, meta);
-    const plugins = getPluginsContainer(nodes)!;
+  it('AC-TREE-NEW3c: description is version only -- source is the marketplace folder, not the version text', () => {
+    const meta = makePluginMeta({ 'skill-creator': makeInstalledInfo('skill-creator', INSTALL_PATH_SC, '1.0.0') });
+    const nodes = buildTreeNodes([], meta);
+    const folder = getPluginFolders(nodes).find(f => f.pluginName === 'skill-creator')!;
+    assert.strictEqual(folder.description, '1.0.0');
+  });
 
-    const scFolder = (plugins.children as PluginFolderNodeDescriptor[]).find(f => f.pluginName === 'skill-creator')!;
-    assert.ok(
-      scFolder.description!.includes('update available'),
-      `description should include "update available". Got: "${scFolder.description}"`
-    );
+  it('AC-TREE-NEW4: outdated plugin description includes "update available" and outdated flag is true', () => {
+    const meta = makePluginMeta({ 'skill-creator': makeInstalledInfo('skill-creator', INSTALL_PATH_SC, 'unknown') }, ['skill-creator']);
+    const nodes = buildTreeNodes([], meta);
+    const scFolder = getPluginFolders(nodes).find(f => f.pluginName === 'skill-creator')!;
+    assert.ok(scFolder.description!.includes('update available'), `Got: "${scFolder.description}"`);
     assert.strictEqual(scFolder.outdated, true, 'PluginFolderNodeDescriptor.outdated should be true');
   });
 
-  it('AC-TREE-NEW5: no duplicate assets -- cache-only scanning means each asset appears once', () => {
-    // Cache-only: scanner only yields assets from plugins/cache, no marketplace copies.
-    // Uses a Command asset because Skills/Agents are now rendered lazily from disk.
-    const cmdPath = `${INSTALL_PATH_SC}/commands/analyzer.md`;
-    const assets: ClaudeAsset[] = [
-      { type: AssetType.Command, name: 'analyzer', filePath: cmdPath, scope: AssetScope.Plugin, description: undefined, rootPath: PLUGINS_CACHE_ROOT }
-    ];
-    const meta = makePluginMeta({
-      'skill-creator': makeInstalledInfo('skill-creator', INSTALL_PATH_SC)
-    });
-    const nodes = buildTreeNodes(assets, meta);
-    const plugins = getPluginsContainer(nodes)!;
-
-    const scFolder = (plugins.children as PluginFolderNodeDescriptor[]).find(f => f.pluginName === 'skill-creator')!;
-    const allAssetNodes: AssetNodeDescriptor[] = [];
-    for (const group of scFolder.children as GroupNodeDescriptor[]) {
-      for (const asset of group.children as AssetNodeDescriptor[]) {
-        allAssetNodes.push(asset);
-      }
-    }
-    const analyzerNodes = allAssetNodes.filter(a => a.label === 'analyzer');
-    assert.strictEqual(analyzerNodes.length, 1, 'each asset should appear exactly once');
+  it('AC-TREE-NEW5: a plugin folder renders its install directory lazily (dirPath set, no precomputed children)', () => {
+    const meta = makePluginMeta({ 'skill-creator': makeInstalledInfo('skill-creator', INSTALL_PATH_SC) });
+    const nodes = buildTreeNodes([], meta);
+    const folder = getPluginFolders(nodes).find(f => f.pluginName === 'skill-creator')!;
+    assert.strictEqual(folder.dirPath, INSTALL_PATH_SC, 'folder mirrors its install directory');
+    assert.strictEqual(folder.children.length, 0, 'children are listed lazily from disk');
   });
 
-  it('AC-TREE-NEW6: plugin with no metadata entry still shows in Plugins with no description', () => {
-    // Cache asset scanned but no pluginMeta provided: flat behavior, no description
+  it('AC-TREE-NEW6: without metadata, scanned plugins still show (asset-derived fallback, no description)', () => {
     const assets = [makePluginAsset('p-skill', '/home/user/.claude/plugins/cache/mk/plugin-a/1.0/skills/p-skill/SKILL.md')];
     const nodes = buildTreeNodes(assets);
-    const plugins = getPluginsContainer(nodes)!;
-
-    const folder = (plugins.children as PluginFolderNodeDescriptor[])[0];
+    const folder = getPluginFolders(nodes)[0];
     assert.strictEqual(folder.kind, NodeKind.PluginFolder, 'should be a PluginFolder');
     assert.strictEqual(folder.pluginName, 'plugin-a');
     assert.strictEqual(folder.description, undefined, 'no metadata -> no description');
   });
 
-  it('AC-TREE-NEW7: no "Installed" or "Available" Container nodes ever appear under Plugins', () => {
-    const assets = [makePluginAsset('analyzer', CACHE_ASSET_SC)];
-    const meta = makePluginMeta({
-      'skill-creator': makeInstalledInfo('skill-creator', INSTALL_PATH_SC)
-    });
-    const nodes = buildTreeNodes(assets, meta);
+  it('AC-TREE-NEW7: no "Installed" or "Available" sections appear under Plugins', () => {
+    const meta = makePluginMeta({ 'skill-creator': makeInstalledInfo('skill-creator', INSTALL_PATH_SC) });
+    const nodes = buildTreeNodes([], meta);
     const plugins = getPluginsContainer(nodes)!;
+    const labels = (plugins.children as ContainerNodeDescriptor[]).map(c => c.label);
+    assert.ok(!labels.includes('Installed') && !labels.includes('Available'), 'no Installed/Available sub-sections');
+  });
 
-    const subContainers = (plugins.children as ContainerNodeDescriptor[]).filter(
-      c => c.kind === NodeKind.Container
-    );
-    assert.strictEqual(subContainers.length, 0, 'Plugins container should have no sub-Container nodes (no Installed/Available sections)');
+  it('AC-TREE-NEW8: a scanned plugin absent from installed_plugins.json is hidden (uninstalled leftover)', () => {
+    const installPathFD = '/Users/braden/.claude/plugins/cache/claude-plugins-official/frontend-design/1.0.0';
+    const assetFD = `${installPathFD}/skills/frontend-design/SKILL.md`;
+    const assets: ClaudeAsset[] = [
+      makePluginAsset('analyzer', CACHE_ASSET_SC), // skill-creator, NOT in metadata
+      { type: AssetType.Skill, name: 'frontend-design', filePath: assetFD, scope: AssetScope.Plugin, description: undefined, rootPath: PLUGINS_CACHE_ROOT }
+    ];
+    const meta = makePluginMeta({ 'frontend-design': makeInstalledInfo('frontend-design', installPathFD, '1.0.0') });
+    const nodes = buildTreeNodes(assets, meta);
+    const names = getPluginFolders(nodes).map(f => f.pluginName);
+    assert.deepStrictEqual(names, ['frontend-design'], 'only plugins in installed_plugins.json should show');
+  });
+
+  it('AC-TREE-NEW9: an installed plugin with no scanned assets still shows (metadata-driven)', () => {
+    const installPath = '/Users/braden/.claude/plugins/cache/claude-plugins-official/frontend-design/1.0.0';
+    const meta = makePluginMeta({ 'frontend-design': makeInstalledInfo('frontend-design', installPath, '1.0.0') });
+    const nodes = buildTreeNodes([], meta); // no assets scanned at all
+    const names = getPluginFolders(nodes).map(f => f.pluginName);
+    assert.deepStrictEqual(names, ['frontend-design'], 'installed plugin shows even with no browsable assets');
   });
 });
 
@@ -792,7 +781,7 @@ describe('buildTreeNodes -- worktree asset grouping', () => {
     const worktreesFolder = proj.children.find(c => c.kind === NodeKind.WorktreesFolder) as WorktreesFolderNodeDescriptor;
     assert.ok(worktreesFolder, 'expected WorktreesFolder');
     assert.strictEqual(worktreesFolder.kind, NodeKind.WorktreesFolder);
-    assert.strictEqual(worktreesFolder.label, 'Worktrees');
+    assert.strictEqual(worktreesFolder.label, 'worktrees');
     // Children sorted alpha
     assert.strictEqual(worktreesFolder.children[0].kind, NodeKind.WorktreeNameFolder);
     assert.strictEqual(worktreesFolder.children[0].label, 'alpha-wt');
@@ -920,7 +909,7 @@ describe('buildTreeNodes -- worktree asset grouping', () => {
     const configNode = allAssets.find(a => a.filePath === configPath);
     assert.ok(skillNode, 'skill asset node should exist in worktree group');
     assert.ok(configNode, 'config asset node should exist in worktree group');
-    assert.strictEqual(skillNode!.commandId, 'claudeAssets.openPreview', 'skill should use openPreview');
+    assert.strictEqual(skillNode!.commandId, 'claudeAssets.openDefault', 'markdown leaf should use openDefault');
     assert.ok(skillNode!.contextValue.includes('-md-'), 'skill should have -md- contextValue');
     assert.strictEqual(configNode!.commandId, 'claudeAssets.openFile', 'config should use openFile');
     assert.ok(configNode!.contextValue.includes('asset-config'), 'config should have asset-config contextValue');
@@ -1072,7 +1061,7 @@ describe('buildTreeNodes -- flat leaves for ClaudeMd and Config', () => {
     assert.strictEqual(leaves.length, 0, 'no direct leaves when only grouped types');
   });
 
-  it('AC-FLAT: flat leaf nodes have correct commandId and contextValue (CLAUDE.md -> openPreview, Config -> openFile)', () => {
+  it('AC-FLAT: flat leaf nodes have correct commandId and contextValue (CLAUDE.md -> openDefault, Config -> openFile)', () => {
     const assets: ClaudeAsset[] = [
       makeAsset(AssetType.ClaudeMd, 'CLAUDE.md', '/home/user/.claude/CLAUDE.md', AssetScope.Global, '/home/user/.claude'),
       makeAsset(AssetType.Config, 'settings.json', '/home/user/.claude/settings.json', AssetScope.Global, '/home/user/.claude')
@@ -1083,7 +1072,7 @@ describe('buildTreeNodes -- flat leaves for ClaudeMd and Config', () => {
 
     const claudeMd = leaves.find(a => a.asset.type === AssetType.ClaudeMd)!;
     assert.ok(claudeMd, 'expected CLAUDE.md leaf');
-    assert.strictEqual(claudeMd.commandId, 'claudeAssets.openPreview', 'CLAUDE.md should use openPreview');
+    assert.strictEqual(claudeMd.commandId, 'claudeAssets.openDefault', 'CLAUDE.md should use openDefault');
     assert.ok(claudeMd.contextValue.includes('-md-'), 'CLAUDE.md contextValue should contain -md-');
 
     const config = leaves.find(a => a.asset.type === AssetType.Config)!;

@@ -142,7 +142,7 @@ describe('Tree node descriptors -- AC14: asset node fields', () => {
 });
 
 describe('Tree node descriptors -- default click command', () => {
-  it('markdown asset descriptor has commandId claudeAssets.openPreview', () => {
+  it('markdown asset descriptor has commandId claudeAssets.openDefault', () => {
     const filePath = '/home/user/.claude/commands/my-cmd.md';
     const asset = makeAsset(AssetType.Command, 'my-cmd', filePath, AssetScope.Global);
 
@@ -151,7 +151,7 @@ describe('Tree node descriptors -- default click command', () => {
     const cmdGroup = groups.find(g => g.assetType === AssetType.Command)!;
     const assetNode = cmdGroup.children[0] as AssetNodeDescriptor;
 
-    assert.strictEqual(assetNode.commandId, 'claudeAssets.openPreview', 'markdown asset default command should be openPreview');
+    assert.strictEqual(assetNode.commandId, 'claudeAssets.openDefault', 'markdown asset default command should be openDefault');
     assert.strictEqual(assetNode.commandArgs[0], filePath, 'command argument should be the filePath');
   });
 
@@ -181,7 +181,7 @@ describe('Tree node descriptors -- default click command', () => {
     const assetNode = leaves.find(a => a.asset.type === AssetType.ClaudeMd)!;
     assert.ok(assetNode, 'expected CLAUDE.md flat leaf');
 
-    assert.strictEqual(assetNode.commandId, 'claudeAssets.openPreview');
+    assert.strictEqual(assetNode.commandId, 'claudeAssets.openDefault');
     assert.deepStrictEqual(assetNode.commandArgs, [filePath]);
   });
 });

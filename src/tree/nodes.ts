@@ -58,14 +58,20 @@ export class PluginFolderNode extends vscode.TreeItem {
   readonly kind = NodeKind.PluginFolder;
   readonly pluginName: string;
   readonly pluginId: string | undefined;
+  /** When set, children are listed lazily from this real install directory. */
+  readonly dirPath: string | undefined;
   readonly children: GroupNode[];
 
   constructor(desc: PluginFolderNodeDescriptor) {
     super(desc.label, vscode.TreeItemCollapsibleState.Collapsed);
     this.pluginName = desc.pluginName;
     this.pluginId = desc.pluginId;
+    this.dirPath = desc.dirPath;
     this.contextValue = desc.outdated ? 'assetPluginFolderOutdated' : 'assetPluginFolder';
     this.iconPath = new vscode.ThemeIcon('folder');
+    if (desc.dirPath !== undefined) {
+      this.tooltip = desc.dirPath;
+    }
     if (desc.description !== undefined) {
       this.description = desc.description;
     }
@@ -98,12 +104,14 @@ export class FsDirNode extends vscode.TreeItem {
   readonly kind = NodeKind.FsDir;
   readonly dirPath: string;
 
-  constructor(dirPath: string, label: string) {
+  // `underPlugins` entries are Claude-managed (use Uninstall, not Delete) -> a distinct
+  // contextValue keeps them out of the Delete menu while still allowing Reveal.
+  constructor(dirPath: string, label: string, underPlugins = false) {
     super(label, vscode.TreeItemCollapsibleState.Collapsed);
     this.dirPath = dirPath;
     this.resourceUri = vscode.Uri.file(dirPath);
     this.tooltip = dirPath;
-    this.contextValue = 'fsDir';
+    this.contextValue = underPlugins ? 'fsDirPlugin' : 'fsDir';
   }
 }
 
@@ -112,15 +120,18 @@ export class FsFileNode extends vscode.TreeItem {
   readonly kind = NodeKind.FsFile;
   readonly filePath: string;
 
-  constructor(filePath: string, label: string) {
+  constructor(filePath: string, label: string, underPlugins = false) {
     super(label, vscode.TreeItemCollapsibleState.None);
     this.filePath = filePath;
     this.resourceUri = vscode.Uri.file(filePath);
     this.tooltip = filePath;
     const isMarkdown = label.toLowerCase().endsWith('.md');
-    this.contextValue = isMarkdown ? 'fsFileMd' : 'fsFile';
+    this.contextValue = isMarkdown
+      ? (underPlugins ? 'fsFileMdPlugin' : 'fsFileMd')
+      : (underPlugins ? 'fsFilePlugin' : 'fsFile');
+    // Open with the user's default editor; "Open Preview" stays in the context menu for .md.
     this.command = {
-      command: isMarkdown ? 'claudeAssets.openPreview' : 'claudeAssets.openFile',
+      command: 'claudeAssets.openDefault',
       title: 'Open',
       arguments: [filePath]
     };

@@ -4,6 +4,7 @@
   "description": "Discover and browse all Claude Code assets across your machine",
   "version": "0.1.0",
   "publisher": "claude-asset-manager",
+  "icon": "media/icon.png",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -88,6 +89,17 @@
         "title": "Update All Plugins",
         "icon": "$(arrow-circle-down)",
         "category": "Claude Assets"
+      },
+      {
+        "command": "claudeAssets.updateMarketplacePlugins",
+        "title": "Update Plugins",
+        "icon": "$(arrow-circle-down)",
+        "category": "Claude Assets"
+      },
+      {
+        "command": "claudeAssets.uninstallPlugin",
+        "title": "Uninstall Plugin",
+        "category": "Claude Assets"
       }
     ],
     "menus": {
@@ -101,17 +113,17 @@
       "view/item/context": [
         {
           "command": "claudeAssets.openFile",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config)-/ || viewItem == fsFile || viewItem == fsFileMd)",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config)-/ || viewItem =~ /^fsFile/)",
           "group": "open"
         },
         {
           "command": "claudeAssets.openPreview",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-md-/ || viewItem == fsFileMd)",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-md-/ || viewItem =~ /^fsFileMd/)",
           "group": "open"
         },
         {
           "command": "claudeAssets.revealInOS",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config)-/ || viewItem == fsFile || viewItem == fsFileMd || viewItem == fsDir || viewItem == assetPluginsRoot || viewItem == assetPluginsRootOutdated || viewItem == assetProjectsRoot)",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config)-/ || viewItem =~ /^fs(Dir|File)/ || viewItem == assetPluginsRoot || viewItem == assetPluginsRootOutdated || viewItem == assetProjectsRoot || viewItem == assetMarketplace || viewItem == assetMarketplaceOutdated)",
           "group": "reveal"
         },
         {
@@ -125,13 +137,23 @@
           "group": "manage"
         },
         {
+          "command": "claudeAssets.uninstallPlugin",
+          "when": "view == claudeAssets.global && (viewItem == assetPluginFolder || viewItem == assetPluginFolderOutdated)",
+          "group": "manage"
+        },
+        {
           "command": "claudeAssets.updateAllPlugins",
           "when": "view == claudeAssets.global && viewItem == assetPluginsRootOutdated",
           "group": "manage"
         },
         {
+          "command": "claudeAssets.updateMarketplacePlugins",
+          "when": "view == claudeAssets.global && viewItem == assetMarketplaceOutdated",
+          "group": "manage"
+        },
+        {
           "command": "claudeAssets.deleteFile",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config)-/ || viewItem == fsFile || viewItem == fsFileMd || viewItem == fsDir)",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config)-(global|project|registered)/ || viewItem == fsFile || viewItem == fsFileMd || viewItem == fsDir)",
           "group": "zzz_delete"
         }
       ]

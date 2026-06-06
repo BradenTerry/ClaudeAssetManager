@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { ClaudeAsset } from '../core/types';
 import { buildTreeNodes, PluginMetadataOptions } from './nodeDescriptors';
@@ -11,6 +12,13 @@ import { ContainerNodeDescriptor } from './nodeDescriptors';
  * then files (alpha), each label keeping its full name and extension. Symlinks
  * are resolved so linked dirs/files render correctly. Returns [] if unreadable.
  */
+const PLUGINS_ROOT = path.join(os.homedir(), '.claude', 'plugins');
+
+/** True when a path lives inside the Claude-managed plugins tree (Uninstall, not Delete). */
+function isUnderPlugins(p: string): boolean {
+  return p === PLUGINS_ROOT || p.startsWith(PLUGINS_ROOT + path.sep);
+}
+
 function listDirectory(dirPath: string): TreeNode[] {
   let names: string[];
   try {
@@ -32,10 +40,11 @@ function listDirectory(dirPath: string): TreeNode[] {
     } catch {
       continue;
     }
+    const underPlugins = isUnderPlugins(full);
     if (stat.isDirectory()) {
-      dirs.push(new FsDirNode(full, name));
+      dirs.push(new FsDirNode(full, name, underPlugins));
     } else if (stat.isFile()) {
-      files.push(new FsFileNode(full, name));
+      files.push(new FsFileNode(full, name, underPlugins));
     }
   }
   return [...dirs, ...files];
@@ -87,7 +96,9 @@ export class AssetTreeProvider implements vscode.TreeDataProvider<TreeNode> {
       return element.children;
     }
     if (element instanceof PluginFolderNode) {
-      return element.children;
+      // Metadata-driven folders mirror the plugin's install directory; the asset-derived
+      // fallback uses precomputed type-group children.
+      return element.dirPath ? listDirectory(element.dirPath) : element.children;
     }
     if (element instanceof WorktreesFolderNode) {
       return element.children;

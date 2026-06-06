@@ -3,9 +3,27 @@
   "displayName": "Claude Asset Manager",
   "description": "Discover and browse all Claude Code assets across your machine",
   "version": "0.1.0",
-  "publisher": "claude-asset-manager",
+  "publisher": "BradenTerry",
   "license": "MIT",
   "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BradenTerry/ClaudeAssetManager.git"
+  },
+  "homepage": "https://github.com/BradenTerry/ClaudeAssetManager#readme",
+  "bugs": {
+    "url": "https://github.com/BradenTerry/ClaudeAssetManager/issues"
+  },
+  "keywords": [
+    "claude",
+    "claude code",
+    "anthropic",
+    "skills",
+    "agents",
+    "commands",
+    "plugins",
+    "assets"
+  ],
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -188,7 +206,9 @@
   "scripts": {
     "compile": "tsc -p .",
     "watch": "tsc -p . --watch",
-    "test": "npm run compile && TS_NODE_PROJECT=tsconfig.test.json mocha"
+    "test": "npm run compile && TS_NODE_PROJECT=tsconfig.test.json mocha",
+    "vscode:prepublish": "npm run compile",
+    "package": "npx --yes @vscode/vsce package"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.6",

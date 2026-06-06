@@ -223,7 +223,7 @@
     "bundle": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node20 --minify",
     "test": "npm run compile && TS_NODE_PROJECT=tsconfig.test.json mocha",
     "vscode:prepublish": "npm run bundle",
-    "package": "npx --yes @vscode/vsce package"
+    "package": "npx --yes @vscode/vsce package --readme-path MARKETPLACE.md"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.6",

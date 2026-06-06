@@ -33,7 +33,7 @@ jobs:
       - run: npm test
 
       - name: Package extension
-        run: npx --yes @vscode/vsce package --out claude-asset-manager.vsix
+        run: npx --yes @vscode/vsce package --readme-path MARKETPLACE.md --out claude-asset-manager.vsix
 
       - name: Attach .vsix to the release
         env:

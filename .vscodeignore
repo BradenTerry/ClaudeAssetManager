@@ -13,5 +13,6 @@ tsconfig.json
 tsconfig.test.json
 package-lock.json
 PROJECT_MAP.md
+README.md
 media/icon.svg
 dist/**/*.map

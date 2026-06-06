@@ -73,38 +73,6 @@ plugin cannot be deleted individually; uninstall the plugin instead.
 - `claudeAssets.followSymlinks`: follow symbolic links while scanning (default `true`).
 - `claudeAssets.excludeDirs`: directory names to skip during recursive scans.
 
-## Install from the Marketplace
-
-Search for "Claude Asset Manager" in the Extensions view, or run:
-
-```bash
-code --install-extension BradenTerry.claude-asset-manager
-```
-
-Or download the `.vsix` from the [latest release](https://github.com/BradenTerry/ClaudeAssetManager/releases),
-then in the Extensions view use the `...` menu and choose **Install from VSIX**.
-
-## Run from a GitHub clone
-
-```bash
-git clone https://github.com/BradenTerry/ClaudeAssetManager.git
-cd ClaudeAssetManager
-npm install
-npm run compile   # type-check and build to out/
-```
-
-Open the folder in VSCode and press `F5` to launch the Extension Development Host. The Claude
-Asset Manager icon appears in the Activity Bar of the new window, with the Global and Working
-Directory sections.
-
-Other useful scripts:
-
-```bash
-npm test          # run the Mocha test suite
-npm run bundle    # produce the bundled dist/extension.js
-npm run package   # build a .vsix
-```
-
 ## Requirements
 
 - VSCode 1.90 or newer.

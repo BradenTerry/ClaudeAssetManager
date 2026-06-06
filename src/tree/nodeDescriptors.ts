@@ -200,7 +200,7 @@ function buildContextValue(asset: ClaudeAsset): string {
 function buildAssetNode(asset: ClaudeAsset): AssetNodeDescriptor {
   const isConfig = asset.type === AssetType.Config;
   // Open with the user's default editor for the file type; config (JSON) opens as a file.
-  const commandId = isConfig ? 'claudeAssets.openFile' : 'claudeAssets.openDefault';
+  const commandId = isConfig ? 'claudeAssets.openFile' : 'claudeAssets.openMarkdown';
   return {
     kind: NodeKind.Asset,
     asset,

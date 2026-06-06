@@ -93,6 +93,9 @@ synthetic `(local)` marketplace group cannot be refreshed or removed.
 - `claudeAssets.excludeDirs`: directory names to skip during recursive scans.
 - `claudeAssets.maxDepth`: how deep to search for a `.claude` directory (default `6`, minimum `1`).
   Once a `.claude` directory is found, its entire contents are scanned regardless of this limit.
+- `claudeAssets.markdownOpenMode`: how a Markdown asset opens on single click -- `default` (VS Code's
+  default editor), `code` (source editor), `preview` (rendered preview), or `split` (source and
+  preview side by side). Defaults to `default`.
 
 ## Install from the Marketplace
 

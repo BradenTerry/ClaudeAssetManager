@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { MarkdownOpenMode, normalizeMarkdownOpenMode } from '../core/markdownOpen';
 
 const CONFIG_SECTION = 'claudeAssets';
 
@@ -18,6 +19,12 @@ export function getExcludeDirs(): string[] {
 
 export function getMaxDepth(): number {
   return vscode.workspace.getConfiguration(CONFIG_SECTION).get<number>('maxDepth', 6);
+}
+
+export function getMarkdownOpenMode(): MarkdownOpenMode {
+  return normalizeMarkdownOpenMode(
+    vscode.workspace.getConfiguration(CONFIG_SECTION).get<string>('markdownOpenMode', 'default')
+  );
 }
 
 export async function addDirectory(dirPath: string): Promise<void> {

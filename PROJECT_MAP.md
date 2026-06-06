@@ -79,7 +79,9 @@ opens in the editor. The extension is read-and-open only (it does not create ass
   disablePlugin, addMarketplace, removeMarketplace, refreshMarketplace, browseMarketplace
   (QuickPick of a source's not-yet-installed catalog plugins -> `claude plugin install`).
 - Settings: `claudeAssets.directories`, `claudeAssets.followSymlinks`, `claudeAssets.excludeDirs`,
-  `claudeAssets.maxDepth` (default 6, min 1; search depth for `.claude` dirs, unlimited once inside one).
+  `claudeAssets.maxDepth` (default 6, min 1; search depth for `.claude` dirs, unlimited once inside one),
+  `claudeAssets.markdownOpenMode` (select default|code|preview|split; single-click open behavior for
+  markdown assets, dispatched by the `claudeAssets.openMarkdown` command via `normalizeMarkdownOpenMode`).
 
 ## Build / run
 - `npm install`, `npm run compile`, `npm test`.

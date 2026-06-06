@@ -210,7 +210,7 @@ describe('buildTreeNodes -- Plugins folder children (nested inside Global)', () 
     const assetNode = cmdGroup.children[0] as AssetNodeDescriptor;
     assert.strictEqual(assetNode.kind, NodeKind.Asset);
     assert.ok(assetNode.contextValue.includes('-md-'), 'plugin asset should have -md- contextValue');
-    assert.strictEqual(assetNode.commandId, 'claudeAssets.openDefault');
+    assert.strictEqual(assetNode.commandId, 'claudeAssets.openMarkdown');
   });
 
   it('uses real plugin path shapes: cache path -> correct plugin name', () => {
@@ -268,7 +268,7 @@ describe('buildTreeNodes -- project containers', () => {
     const cmdGroup = projContainer.children[0] as GroupNodeDescriptor;
     const assetNode = cmdGroup.children[0] as AssetNodeDescriptor;
     assert.ok(assetNode.contextValue.includes('-md-'), 'command asset should have -md- contextValue');
-    assert.strictEqual(assetNode.commandId, 'claudeAssets.openDefault');
+    assert.strictEqual(assetNode.commandId, 'claudeAssets.openMarkdown');
     assert.strictEqual(assetNode.filePath, filePath);
   });
 
@@ -909,7 +909,7 @@ describe('buildTreeNodes -- worktree asset grouping', () => {
     const configNode = allAssets.find(a => a.filePath === configPath);
     assert.ok(skillNode, 'skill asset node should exist in worktree group');
     assert.ok(configNode, 'config asset node should exist in worktree group');
-    assert.strictEqual(skillNode!.commandId, 'claudeAssets.openDefault', 'markdown leaf should use openDefault');
+    assert.strictEqual(skillNode!.commandId, 'claudeAssets.openMarkdown', 'markdown leaf should use openMarkdown');
     assert.ok(skillNode!.contextValue.includes('-md-'), 'skill should have -md- contextValue');
     assert.strictEqual(configNode!.commandId, 'claudeAssets.openFile', 'config should use openFile');
     assert.ok(configNode!.contextValue.includes('asset-config'), 'config should have asset-config contextValue');
@@ -1061,7 +1061,7 @@ describe('buildTreeNodes -- flat leaves for ClaudeMd and Config', () => {
     assert.strictEqual(leaves.length, 0, 'no direct leaves when only grouped types');
   });
 
-  it('AC-FLAT: flat leaf nodes have correct commandId and contextValue (CLAUDE.md -> openDefault, Config -> openFile)', () => {
+  it('AC-FLAT: flat leaf nodes have correct commandId and contextValue (CLAUDE.md -> openMarkdown, Config -> openFile)', () => {
     const assets: ClaudeAsset[] = [
       makeAsset(AssetType.ClaudeMd, 'CLAUDE.md', '/home/user/.claude/CLAUDE.md', AssetScope.Global, '/home/user/.claude'),
       makeAsset(AssetType.Config, 'settings.json', '/home/user/.claude/settings.json', AssetScope.Global, '/home/user/.claude')
@@ -1072,7 +1072,7 @@ describe('buildTreeNodes -- flat leaves for ClaudeMd and Config', () => {
 
     const claudeMd = leaves.find(a => a.asset.type === AssetType.ClaudeMd)!;
     assert.ok(claudeMd, 'expected CLAUDE.md leaf');
-    assert.strictEqual(claudeMd.commandId, 'claudeAssets.openDefault', 'CLAUDE.md should use openDefault');
+    assert.strictEqual(claudeMd.commandId, 'claudeAssets.openMarkdown', 'CLAUDE.md should use openMarkdown');
     assert.ok(claudeMd.contextValue.includes('-md-'), 'CLAUDE.md contextValue should contain -md-');
 
     const config = leaves.find(a => a.asset.type === AssetType.Config)!;

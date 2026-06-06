@@ -139,7 +139,7 @@ export class FsFileNode extends vscode.TreeItem {
       : (underPlugins ? 'fsFilePlugin' : 'fsFile');
     // Open with the user's default editor; "Open Preview" stays in the context menu for .md.
     this.command = {
-      command: 'claudeAssets.openDefault',
+      command: isMarkdown ? 'claudeAssets.openMarkdown' : 'claudeAssets.openDefault',
       title: 'Open',
       arguments: [filePath]
     };

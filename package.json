@@ -288,6 +288,18 @@
           "default": 6,
           "minimum": 1,
           "description": "Maximum directory depth to search for a .claude directory. Once a .claude directory is found, its entire contents are scanned regardless of this limit."
+        },
+        "claudeAssets.markdownOpenMode": {
+          "type": "string",
+          "enum": ["default", "code", "preview", "split"],
+          "enumDescriptions": [
+            "Use VS Code's default editor for Markdown.",
+            "Open the Markdown source in the editor.",
+            "Open the rendered Markdown preview.",
+            "Open the source and rendered preview side by side."
+          ],
+          "default": "default",
+          "description": "How Claude Markdown assets open when clicked in the tree."
         }
       }
     }

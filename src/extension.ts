@@ -15,6 +15,7 @@ import {
   getFollowSymlinks,
   getExcludeDirs,
   getMaxDepth,
+  getMarkdownOpenMode,
   addDirectory,
   removeDirectory
 } from './services/settings';
@@ -235,6 +236,30 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.commands.executeCommand('markdown.showPreview', uri).then(undefined, err => {
         vscode.window.showErrorMessage(`Could not open preview: ${err}`);
       });
+    }),
+
+    vscode.commands.registerCommand('claudeAssets.openMarkdown', (arg: unknown) => {
+      const filePath = resolveFsPath(arg);
+      if (!filePath) { vscode.window.showErrorMessage('Could not open: no file path.'); return; }
+      const uri = vscode.Uri.file(filePath);
+      const mode = getMarkdownOpenMode();
+      const fail = (err: unknown) => vscode.window.showErrorMessage(`Could not open file: ${err}`);
+      if (mode === 'preview') {
+        vscode.commands.executeCommand('markdown.showPreview', uri).then(undefined, fail);
+      } else if (mode === 'code') {
+        // preview:true reuses the single ephemeral tab instead of accumulating tabs.
+        vscode.window.showTextDocument(uri, { preview: true }).then(undefined, fail);
+      } else if (mode === 'split') {
+        // Pin the source to the first column so the side preview always lands in the
+        // same second column (reused, not locked) -- otherwise the active column drifts
+        // right on each open and VS Code keeps spawning new splits.
+        vscode.window.showTextDocument(uri, { viewColumn: vscode.ViewColumn.One, preview: true }).then(
+          () => vscode.commands.executeCommand('markdown.showPreviewToSide', uri).then(undefined, fail),
+          fail
+        );
+      } else { // default
+        vscode.commands.executeCommand('vscode.open', uri).then(undefined, fail);
+      }
     }),
 
     vscode.commands.registerCommand('claudeAssets.revealInOS', (arg: unknown) => {

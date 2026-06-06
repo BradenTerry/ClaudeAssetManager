@@ -159,12 +159,39 @@ function tryAddAsset(filePath: string, scope: AssetScope, root: ScanRoot, assets
   const type = recognizeAssetType(filePath);
   if (type === undefined) return;
 
-  // For the global root, exclude assets that are inside the plugins dir
-  // (those are handled by the plugins root -- but deduplication by filePath is fine)
+  // Only include CLAUDE.md files at meaningful roots (global, a project/worktree root, or
+  // inside a .claude/ dir). This skips nested CLAUDE.md files an app may ship as content.
+  if (type === AssetType.ClaudeMd && !isRootClaudeMd(filePath, root.path)) {
+    return;
+  }
+
   try {
     const asset = buildAsset(filePath, type, scope, root.path);
     assets.push(asset);
   } catch {
     // unreadable or failed -- skip
+  }
+}
+
+/**
+ * A CLAUDE.md counts only when it is:
+ *   - directly inside a .claude/ directory (global ~/.claude, a project/worktree .claude), or
+ *   - at a scan root itself (a workspace/registered root CLAUDE.md), or
+ *   - at a project/worktree ROOT, i.e. its directory also contains a .claude/ subdir.
+ * A deeply nested CLAUDE.md (e.g. app content under src/) matches none and is excluded.
+ */
+function isRootClaudeMd(filePath: string, rootPath: string): boolean {
+  const dir = path.dirname(filePath);
+  const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '');
+  if (path.basename(dir) === '.claude') {
+    return true;
+  }
+  if (norm(dir) === norm(rootPath)) {
+    return true;
+  }
+  try {
+    return fs.statSync(path.join(dir, '.claude')).isDirectory();
+  } catch {
+    return false;
   }
 }

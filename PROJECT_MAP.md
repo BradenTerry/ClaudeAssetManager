@@ -1,78 +1,72 @@
-# Claude Assets (VSCode extension)
+# Claude Asset Manager
 
-A VSCode extension that discovers every Claude Code asset a user can create across their
-machine -- skills, subagents, slash commands, memory/CLAUDE.md, and JSON config -- and shows
-them in a sidebar tree with scope labels and name-collision detection. Viewing and editing
-happen by opening the file in the editor natively; the extension has no editor of its own.
-
-(This folder previously held a native Avalonia desktop app for the same purpose; it was
-replaced by this extension because editing is better left to the editor and VSCode's tree +
-file-watching + markdown preview come for free.)
+A native VSCode extension that discovers and browses every Claude Code asset on a machine
+(skills, subagents, slash commands, memory/CLAUDE.md, and `.claude` JSON config) in two
+collapsible sidebar sections: **Global** and a **Working Directory** section titled after the
+open folder (e.g. `Projects (WD)`). Markdown opens in the rendered preview on click; config
+opens in the editor. The extension is read-and-open only (it does not create assets).
 
 ## Stack
-- TypeScript (strict), compiled with tsc to CommonJS in `out/`. `engines.vscode` ^1.90.0.
-- `yaml` for frontmatter parsing; `JSON.parse` for config.
-- Mocha + Node assert + ts-node, temp-directory (mkdtemp) fixtures. No testcontainers.
+- TypeScript (strict), compiled with tsc to CommonJS in `out/` (`main` = `out/extension.js`).
+- `yaml` for frontmatter; `JSON.parse` for config.
+- Mocha + Node assert with temp-directory fixtures (141 tests). Core is `vscode`-free and
+  fully unit-tested; the tree/extension layers are exercised via the pure descriptor functions.
 
 ## Architecture
-- `src/core/` -- ZERO `vscode` import; all discovery/parse/scope/collision logic, so it is
-  unit-testable without the extension host. Home dir, registered dirs, and workspace dirs are
-  injected so tests never touch the real `~/.claude`.
-  - `types.ts` -- AssetType, AssetScope, ClaudeAsset (incl. `tools?: string[]`), Collision, ScanOptions.
-  - `frontmatter.ts` -- parseFrontmatter(text) -> { data, body } via `yaml`.
-  - `assetFactory.ts` -- file + root -> ClaudeAsset; `parseToolsList` handles YAML-list and
-    comma-separated `tools`/`allowed-tools`.
-  - `scanRoots.ts` -- buildScanRoots(homeDir, registeredDirs, workspaceDirs) with scope tags.
-  - `scanner.ts` -- walks roots, follows symlinks (fs.realpathSync), cycle guard on a
-    visited-real-path set, prunes noise dirs; `deriveScope` classifies by location.
-  - `collisions.ts` -- detectCollisions(assets) grouped by (type, name).
-- `src/tree/` -- `nodeDescriptors.ts` is a PURE `buildTreeNodes(assets, collisions)` returning
-  node data (no vscode import, so it is unit-tested headless); `nodes.ts` + `assetTreeProvider.ts`
-  map nodes to `vscode.TreeItem` and implement TreeDataProvider.
+- `src/core/` -- ZERO `vscode` import. Discovery, parsing, classification, plugin metadata.
+  Home dir + paths are injected so tests never touch the real `~/.claude`.
+  - `types.ts` -- AssetType, AssetScope, `ClaudeAsset` (incl. `rootPath`), ScanRoot, ScanOptions.
+  - `scanRoots.ts` -- `buildScanRoots(home, registeredDirs, workspaceDirs)`: global `~/.claude`,
+    plugins `~/.claude/plugins/cache` (installed only), memory `~/.claude/projects`, plus
+    workspace + registered roots.
+  - `scanner.ts` -- walks roots, follows symlinks (realpath + visited-set cycle guard), prunes
+    noise dirs; the global home root skips its `plugins/` and `projects/` subtrees (handled by
+    dedicated roots). `deriveScope` keeps memory Global; Config and CLAUDE.md are restricted (below).
+  - `assetFactory.ts` -- `recognizeAssetType` + `buildAsset`; parses `tools`/`allowed-tools`.
+  - `containerDerivations.ts` -- `derivePluginName`, `deriveProjectInfo` ({project, worktree}),
+    `deriveMemoryProject`, `isRootLevelAsset`.
+  - `pluginMetadata.ts` -- `readInstalledPlugins`, `readCatalogLastUpdated`, `isOutdated`.
+  - `frontmatter.ts` -- YAML frontmatter split. (Collision detection was removed as noise.)
+- `src/tree/`
+  - `nodeDescriptors.ts` -- pure `buildTreeNodes(assets, pluginMeta?)` returns the nested
+    descriptor tree (no `vscode`). Node kinds: Container, PluginFolder, Group, Asset,
+    WorktreesFolder, WorktreeNameFolder.
+  - `nodes.ts` -- maps descriptors to `vscode.TreeItem` subclasses.
+  - `assetTreeProvider.ts` -- one `AssetTreeProvider(section)` per sidebar section; its roots are
+    the children of the matching top-level container ('global' | 'working-directory').
 - `src/services/` -- `settings.ts` (read/write `claudeAssets.directories`), `watcher.ts`
-  (debounced fs.watch over scan roots -> refresh).
-- `src/extension.ts` -- activate(): registers the tree, the six commands, settings, watcher.
-- `media/claude-assets.svg` -- Activity Bar icon.
+  (debounced fs.watch over scan roots).
+- `src/extension.ts` -- `activate`: two views, six commands, watcher; titles the Working
+  Directory view after the open folder + ` (WD)`; reads plugin metadata each scan (no network).
 
-## Scope classification (deriveScope)
-Global = under `~/.claude` excluding plugins; Plugin = under `~/.claude/plugins`;
-Project = path contains a `.claude/` segment (or a project-root CLAUDE.md) under a scanned
-dir; Registered = a loose asset under a registered dir with no `.claude/` segment.
-Global and Plugin are matched first so they are never reclassified.
-
-## Discovery
-Sources: global `~/.claude/`, `~/.claude/plugins/`, `~/.claude/projects/*/memory/`,
-registered dirs from the `claudeAssets.directories` setting (recursive), and open workspace
-folders. Symlinks are followed (load-bearing: `~/.claude/skills`, `agents`, `CLAUDE.md` are
-typically symlinks into a dotfiles repo). Noise dirs pruned: node_modules, .git, bin, obj,
-dist, target, .venv, venv, .idea, .vs. Missing files/dirs are never errors.
+## Tree structure
+- **Global** section: flat `CLAUDE.md` + config leaves, then type groups (Skills, Subagents,
+  Commands), then a **Projects** folder holding per-project memory (`~/.claude/projects/*/memory`),
+  then a **Plugins** folder (installed plugins only, each showing version and an "update
+  available" indicator when the catalog timestamp is newer).
+- **Working Directory** section: the scan root's own `.claude` assets rendered flat at the top,
+  then one folder per sub-project (sorted alpha). Each project folder: flat `CLAUDE.md`/config
+  leaves, type groups, and a **Worktrees** folder (one sub-folder per git worktree found under
+  `<project>/.claude/worktrees/<name>/`).
 
 ## Recognition rules
-- Skill: `**/skills/<name>/SKILL.md` (name = enclosing dir); frontmatter name/description/allowed-tools.
-- Subagent: `**/.claude/agents/**/*.md`; frontmatter name/description/tools/model.
-- Command: `**/.claude/commands/**/*.md`; namespaced name from subpath.
-- ClaudeMd: `CLAUDE.md` (global symlink, project root, nested).
-- Memory: `~/.claude/projects/*/memory/MEMORY.md` + sibling per-fact `*.md`.
-- Config: `settings.json`, `settings.local.json`, `keybindings.json` (type=Config).
+- Skill: `**/skills/<name>/SKILL.md`. Subagent: `**/agents/**/*.md`. Command: `**/commands/**/*.md`.
+- Config: `settings.json` / `settings.local.json` / `keybindings.json` ONLY when the immediate
+  parent dir is `.claude` (excludes `.vscode/settings.json` etc.).
+- CLAUDE.md: only the global one, a CLAUDE.md inside a `.claude/`, at a scan root, or at a dir
+  with a `.claude` sibling (project/worktree root). Deeply nested app `CLAUDE.md` is excluded.
+- Memory: `MEMORY.md` and `*.md` under a `memory/` dir; always Global scope.
 
-## Contributes (package.json)
-- View container `claude-assets` (Activity Bar) + tree view `claudeAssets.tree`.
-- Commands: `claudeAssets.refresh`, `.addDirectory`, `.removeDirectory`, `.openFile`,
-  `.openPreview`, `.revealInOS` (openFile -> showTextDocument, openPreview -> markdown.showPreview,
-  revealInOS -> revealFileInOS).
+## Interactions / settings
+- Click markdown asset -> `markdown.showPreview`; click config -> open in editor.
+- Commands: refresh, addDirectory, removeDirectory, openFile, openPreview, revealInOS.
 - Settings: `claudeAssets.directories`, `claudeAssets.followSymlinks`, `claudeAssets.excludeDirs`.
 
-## Tests
-39 Mocha tests, headless (no Electron host): scanner discovery/scope/symlink/cycle/noise-prune,
-collision detection, frontmatter + tools parsing, scope classification (all four scopes incl.
-Project-via-registered-`.claude` and Registered-loose), and the pure `buildTreeNodes`
-(groups per type, collisions group, asset node carries filePath/contextValue).
-
 ## Build / run
-- `npm install` (needs network), `npm run compile`, `npm test`.
-- Manual smoke: open the folder in VSCode and press F5 (Extension Development Host); the
-  Claude Assets view should list assets from `~/.claude`. Not automatable here.
+- `npm install`, `npm run compile`, `npm test`.
+- F5 (Run Extension) opens the Extension Development Host; the Claude Asset Manager container
+  shows the Global and Working Directory sections.
 
 ## Out of scope (v1)
-In-extension editing / JSON validation, creating or deleting assets, plugin management,
-MCP/hooks structured views, diff/git/history, webview UI, a full Electron-host test suite.
+Creating/deleting assets, structured MCP/hooks editing, plugin install/update actions, diff/git
+history, network update fetches (update check is local-timestamp only), name-collision detection.

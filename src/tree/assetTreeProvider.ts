@@ -4,6 +4,11 @@ import { buildTreeNodes, PluginMetadataOptions } from './nodeDescriptors';
 import { ContainerNode, PluginFolderNode, GroupNode, AssetNode, WorktreesFolderNode, WorktreeNameFolderNode, TreeNode } from './nodes';
 import { ContainerNodeDescriptor } from './nodeDescriptors';
 
+/**
+ * Backs a single sidebar section (its own view). `section` selects which top-level
+ * container's CHILDREN become the roots of this view, so "Global" and "Working Directory"
+ * render as separate collapsible sections rather than nodes inside one tree.
+ */
 export class AssetTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   private _onDidChangeTreeData = new vscode.EventEmitter<TreeNode | undefined | null>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
@@ -11,6 +16,8 @@ export class AssetTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   private assets: ClaudeAsset[] = [];
   private pluginMeta: PluginMetadataOptions | undefined;
   private rootNodes: TreeNode[] = [];
+
+  constructor(private readonly section: 'global' | 'working-directory') {}
 
   update(assets: ClaudeAsset[], pluginMeta?: PluginMetadataOptions): void {
     this.assets = assets;
@@ -20,7 +27,9 @@ export class AssetTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 
   private rebuild(): void {
     const descriptors = buildTreeNodes(this.assets, this.pluginMeta);
-    this.rootNodes = descriptors.map(d => new ContainerNode(d as ContainerNodeDescriptor));
+    const container = descriptors.find(d => d.containerKind === this.section);
+    // The section header IS the container; show its children as this view's roots.
+    this.rootNodes = container ? new ContainerNode(container as ContainerNodeDescriptor).children : [];
     this._onDidChangeTreeData.fire(null);
   }
 

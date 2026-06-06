@@ -129,6 +129,25 @@ export function deriveProjectName(asset: ClaudeAsset): string {
 }
 
 /**
+ * True when a Project/Registered asset belongs to the scan root ITSELF rather than a
+ * sub-project beneath it -- i.e. its `.claude/` (or root CLAUDE.md) lives directly in the
+ * registered/workspace root. Such assets should render flat at the Working Directory root
+ * instead of inside a folder named after the root.
+ */
+export function isRootLevelAsset(asset: ClaudeAsset): boolean {
+  const norm = asset.filePath.replace(/\\/g, '/');
+  const root = (asset.rootPath || '').replace(/\\/g, '/').replace(/\/+$/, '');
+  if (!root) {
+    return false;
+  }
+  return (
+    norm.startsWith(root + '/.claude/') ||
+    norm === root + '/.claude' ||
+    norm === root + '/CLAUDE.md'
+  );
+}
+
+/**
  * For a memory asset under ~/.claude/projects/<encoded>/memory/..., return a readable
  * label for the originating project. The <encoded> segment is the project's working
  * directory with "/" replaced by "-" (lossy, so decoding is best-effort).

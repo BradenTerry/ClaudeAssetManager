@@ -25,8 +25,14 @@
     "views": {
       "claude-assets": [
         {
-          "id": "claudeAssets.tree",
-          "name": "Claude Asset Manager",
+          "id": "claudeAssets.global",
+          "name": "Global",
+          "icon": "media/claude-assets.svg",
+          "contextualTitle": "Claude Asset Manager"
+        },
+        {
+          "id": "claudeAssets.workingDirectory",
+          "name": "Working Directory",
           "icon": "media/claude-assets.svg",
           "contextualTitle": "Claude Asset Manager"
         }
@@ -70,34 +76,34 @@
       "view/title": [
         {
           "command": "claudeAssets.refresh",
-          "when": "view == claudeAssets.tree",
+          "when": "view == claudeAssets.global || view == claudeAssets.workingDirectory",
           "group": "navigation"
         },
         {
           "command": "claudeAssets.addDirectory",
-          "when": "view == claudeAssets.tree",
+          "when": "view == claudeAssets.workingDirectory",
           "group": "navigation"
         }
       ],
       "view/item/context": [
         {
           "command": "claudeAssets.openFile",
-          "when": "view == claudeAssets.tree && viewItem =~ /asset/",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem =~ /asset/",
           "group": "open"
         },
         {
           "command": "claudeAssets.openPreview",
-          "when": "view == claudeAssets.tree && viewItem =~ /asset-md/",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem =~ /asset-md/",
           "group": "open"
         },
         {
           "command": "claudeAssets.revealInOS",
-          "when": "view == claudeAssets.tree && viewItem =~ /asset/",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem =~ /asset/",
           "group": "reveal"
         },
         {
           "command": "claudeAssets.removeDirectory",
-          "when": "view == claudeAssets.tree && viewItem == registeredRoot",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem == registeredRoot",
           "group": "manage"
         }
       ]

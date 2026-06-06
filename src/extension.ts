@@ -17,7 +17,8 @@ import {
 
 export function activate(context: vscode.ExtensionContext): void {
   const homeClaudeDir = path.join(os.homedir(), '.claude');
-  const provider = new AssetTreeProvider();
+  const globalProvider = new AssetTreeProvider('global');
+  const workingDirProvider = new AssetTreeProvider('working-directory');
 
   let disposeWatcher: (() => void) | null = null;
 
@@ -42,7 +43,9 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }
 
-    provider.update(assets, { installedPlugins, outdated });
+    const meta = { installedPlugins, outdated };
+    globalProvider.update(assets, meta);
+    workingDirProvider.update(assets, meta);
 
     // Re-watch
     if (disposeWatcher) {
@@ -53,15 +56,34 @@ export function activate(context: vscode.ExtensionContext): void {
     });
   }
 
-  // Register tree view
-  const treeView = vscode.window.createTreeView('claudeAssets.tree', {
-    treeDataProvider: provider,
+  // Register the two sidebar sections as separate views
+  const globalView = vscode.window.createTreeView('claudeAssets.global', {
+    treeDataProvider: globalProvider,
+    showCollapseAll: true
+  });
+  const workingDirView = vscode.window.createTreeView('claudeAssets.workingDirectory', {
+    treeDataProvider: workingDirProvider,
     showCollapseAll: true
   });
 
+  // Title the Working Directory section after the folder VSCode is open in, e.g. "Projects (WD)".
+  function updateWorkingDirTitle(): void {
+    const folders = vscode.workspace.workspaceFolders;
+    if (folders && folders.length === 1) {
+      workingDirView.title = `${folders[0].name} (WD)`;
+    } else if (folders && folders.length > 1) {
+      workingDirView.title = `${vscode.workspace.name ?? 'Workspace'} (WD)`;
+    } else {
+      workingDirView.title = 'Working Directory';
+    }
+  }
+  updateWorkingDirTitle();
+
   // Commands
   context.subscriptions.push(
-    treeView,
+    globalView,
+    workingDirView,
+    vscode.workspace.onDidChangeWorkspaceFolders(() => updateWorkingDirTitle()),
 
     vscode.commands.registerCommand('claudeAssets.refresh', () => {
       runScan().catch(err => {

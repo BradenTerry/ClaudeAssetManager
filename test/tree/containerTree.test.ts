@@ -714,6 +714,27 @@ describe('buildTreeNodes -- Working Directory container', () => {
     assert.ok(wd, 'expected Working Directory container');
     assert.strictEqual(wd!.label, 'Working Directory');
   });
+
+  it('AC-WD6: root-level assets (the working dir own .claude) render flat at the WD root, not in a self-named folder', () => {
+    const assets: ClaudeAsset[] = [
+      // sub-project beneath the registered root
+      makeAsset(AssetType.Skill, 'a-skill', '/Users/braden/Projects/Alpha/.claude/skills/a-skill/SKILL.md', AssetScope.Registered, '/Users/braden/Projects'),
+      // the working dir's OWN .claude config (directly under the registered root)
+      makeAsset(AssetType.Config, 'settings.local.json', '/Users/braden/Projects/.claude/settings.local.json', AssetScope.Registered, '/Users/braden/Projects')
+    ];
+    const nodes = buildTreeNodes(assets);
+    const wd = getWorkingDir(nodes)!;
+    assert.ok(wd, 'expected Working Directory container');
+
+    // settings.local.json is a direct Asset leaf of Working Directory (no wrapping folder)
+    const leaf = wd.children.find(c => c.kind === NodeKind.Asset) as AssetNodeDescriptor | undefined;
+    assert.ok(leaf, 'root-level config should be a direct leaf under Working Directory');
+    assert.strictEqual(leaf!.asset.name, 'settings.local.json');
+
+    // No self-named "Projects" folder; Alpha sub-project is still a folder
+    assert.ok(!getProjects(nodes).some(p => p.label === 'Projects'), 'no self-named Projects folder for the root');
+    assert.ok(findProject(nodes, 'Alpha'), 'Alpha sub-project should still be a folder');
+  });
 });
 
 // ---------------------------------------------------------------------------

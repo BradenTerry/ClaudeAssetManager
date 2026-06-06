@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { AssetType, AssetScope, ClaudeAsset } from '../core/types';
 import { InstalledPluginInfo } from '../core/pluginMetadata';
-import { derivePluginName, deriveProjectInfo, deriveMemoryProject } from '../core/containerDerivations';
+import { derivePluginName, deriveProjectInfo, deriveMemoryProject, isRootLevelAsset } from '../core/containerDerivations';
 
 export enum NodeKind {
   Container = 'Container',
@@ -301,6 +301,7 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
   // Partition by scope
   const globalAssets: ClaudeAsset[] = [];
   const pluginAssets: ClaudeAsset[] = [];
+  const workingRootAssets: ClaudeAsset[] = [];
   const projectAssetsByName = new Map<string, ClaudeAsset[]>();
 
   for (const asset of assets) {
@@ -308,8 +309,12 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
       globalAssets.push(asset);
     } else if (asset.scope === AssetScope.Plugin) {
       pluginAssets.push(asset);
+    } else if (isRootLevelAsset(asset)) {
+      // Belongs to the working-directory root itself -- render flat at the WD root,
+      // not inside a folder named after the root.
+      workingRootAssets.push(asset);
     } else {
-      // Project or Registered -- use deriveProjectInfo to key by project name
+      // A sub-project beneath the root -- key by derived project name
       const info = deriveProjectInfo(asset);
       const name = info.project;
       const group = projectAssetsByName.get(name);
@@ -401,24 +406,33 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
     });
   }
 
-  // 2. Working Directory container holding one sub-container per project.
+  // 2. Working Directory container: the root's own assets rendered flat at the top,
+  //    then one sub-container per sub-project (sorted alpha).
   const sortedProjects = [...projectAssetsByName.entries()].sort(([a], [b]) => a.localeCompare(b));
 
-  if (sortedProjects.length > 0) {
-    const projectContainers: ContainerNodeDescriptor[] = sortedProjects.map(
-      ([projectName, projAssets]) => ({
+  if (sortedProjects.length > 0 || workingRootAssets.length > 0) {
+    const wdChildren: ContainerNodeDescriptor['children'] = [];
+
+    // Root-level assets (e.g. the working dir's own .claude/settings.local.json) flat first
+    if (workingRootAssets.length > 0) {
+      wdChildren.push(...buildProjectChildren(workingRootAssets));
+    }
+
+    // Sub-projects as folders
+    for (const [projectName, projAssets] of sortedProjects) {
+      wdChildren.push({
         kind: NodeKind.Container,
         containerKind: 'project',
         label: projectName,
         children: buildProjectChildren(projAssets)
-      })
-    );
+      });
+    }
 
     nodes.push({
       kind: NodeKind.Container,
       containerKind: 'working-directory',
       label: 'Working Directory',
-      children: projectContainers
+      children: wdChildren
     });
   }
 

@@ -168,6 +168,23 @@ describe('Scanner -- AC4: CLAUDE.md and Memory assets', () => {
     assert.ok(claudeMds.length >= 1, 'expected at least one CLAUDE.md asset');
   });
 
+  it('includes project-root and worktree CLAUDE.md but excludes deeply nested app CLAUDE.md', () => {
+    const projectDir = path.join(root, 'app');
+    mkdir(path.join(projectDir, '.claude'));
+    writeFile(path.join(projectDir, 'CLAUDE.md'), `# root instructions\n`);                 // project root
+    writeFile(path.join(projectDir, '.claude', 'worktrees', 'wt1', '.claude', 'keep.txt'), ``); // marks wt1 as a root
+    writeFile(path.join(projectDir, '.claude', 'worktrees', 'wt1', 'CLAUDE.md'), `# wt\n`);   // worktree root
+    writeFile(path.join(projectDir, 'src', 'feature', 'CLAUDE.md'), `# app content, not config\n`); // nested
+
+    const roots = buildScanRoots(path.join(root, '.claude-none'), [], [projectDir]);
+    const assets = scan(roots, { excludeDirs: DEFAULT_EXCLUDE, followSymlinks: true });
+    const paths = assets.filter(a => a.type === AssetType.ClaudeMd).map(a => a.filePath.replace(/\\/g, '/'));
+
+    assert.ok(paths.some(p => p.endsWith('/app/CLAUDE.md')), 'project-root CLAUDE.md must be included');
+    assert.ok(paths.some(p => p.endsWith('/wt1/CLAUDE.md')), 'worktree-root CLAUDE.md must be included');
+    assert.ok(!paths.some(p => p.includes('/src/feature/')), 'deeply nested CLAUDE.md must be excluded');
+  });
+
   it('returns Memory assets for MEMORY.md and per-fact files', () => {
     const claudeDir = path.join(root, '.claude');
     buildGlobalClaudeDir(claudeDir);
@@ -542,16 +559,16 @@ describe('Scanner -- AC12: Global home root must NOT descend into plugins/ or pr
     // Guard against over-broad exclusion: only the global home root prunes plugins/projects
     const workspaceDir = path.join(root, 'my-workspace');
     writeFile(
-      path.join(workspaceDir, 'plugins', 'CLAUDE.md'),
-      `# Project instructions inside a dir named plugins\n`
+      path.join(workspaceDir, 'plugins', 'skills', 'foo', 'SKILL.md'),
+      `---\nname: foo\ndescription: a skill inside a dir named plugins\n---\n`
     );
 
     const claudeDir = path.join(root, '.claude-fake');
     const roots = buildScanRoots(claudeDir, [], [workspaceDir]);
     const assets = scan(roots, { excludeDirs: DEFAULT_EXCLUDE, followSymlinks: true });
 
-    const claudeMd = assets.find(a => a.type === AssetType.ClaudeMd);
-    assert.ok(claudeMd, 'CLAUDE.md inside a project-level "plugins" dir must still be found');
+    const skill = assets.find(a => a.type === AssetType.Skill && a.name === 'foo');
+    assert.ok(skill, 'a skill inside a project-level "plugins" dir must still be found');
   });
 });
 

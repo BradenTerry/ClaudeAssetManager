@@ -2,7 +2,7 @@
   "name": "claude-asset-manager",
   "displayName": "Claude Asset Manager",
   "description": "Discover and browse all Claude Code assets across your machine",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "BradenTerry",
   "license": "MIT",
   "icon": "media/icon.png",

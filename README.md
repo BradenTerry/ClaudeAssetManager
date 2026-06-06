@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="media/icon.png" alt="Claude Asset Manager icon" width="128" height="128">
+</p>
+
 # Claude Asset Manager
 
 A VSCode extension that puts every Claude Code asset on your machine in one sidebar: skills,

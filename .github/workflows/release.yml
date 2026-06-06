@@ -1,12 +1,15 @@
 name: Release
 
-# Runs when you publish a GitHub Release (create it manually in the GitHub UI /
-# the VS Code GitHub integration). Bump "version" in package.json first and tag the
-# release to match (e.g. v0.2.0). The job tests, packages the extension, attaches the
-# .vsix to the release, and publishes to the VS Code Marketplace when VSCE_PAT is set.
+# Runs when you push a version tag (e.g. v0.2.0) to a commit on main. Bump "version"
+# in package.json to match the tag first; the job fails fast if they differ. It tests,
+# packages the extension, creates the GitHub Release with auto-generated notes and the
+# .vsix attached, and publishes to the VS Code Marketplace when VSCE_PAT is set.
+#
+#   git tag v0.2.0 && git push origin v0.2.0
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
 
 permissions:
   contents: write
@@ -28,6 +31,15 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: Verify tag matches package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $PKG" >&2
+            exit 1
+          fi
+
       - run: npm ci
 
       - run: npm test
@@ -35,10 +47,10 @@ jobs:
       - name: Package extension
         run: npx --yes @vscode/vsce package --readme-path MARKETPLACE.md --out claude-asset-manager.vsix
 
-      - name: Attach .vsix to the release
+      - name: Create GitHub Release with .vsix
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" claude-asset-manager.vsix --clobber
+        run: gh release create "$GITHUB_REF_NAME" claude-asset-manager.vsix --title "$GITHUB_REF_NAME" --generate-notes
 
       - name: Publish to VS Code Marketplace
         if: ${{ env.VSCE_PAT != '' }}

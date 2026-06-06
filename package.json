@@ -1,0 +1,147 @@
+{
+  "name": "claude-asset-manager",
+  "displayName": "Claude Asset Manager",
+  "description": "Discover and browse all Claude Code assets across your machine",
+  "version": "0.1.0",
+  "publisher": "claude-asset-manager",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "claude-assets",
+          "title": "Claude Asset Manager",
+          "icon": "media/claude-assets.svg"
+        }
+      ]
+    },
+    "views": {
+      "claude-assets": [
+        {
+          "id": "claudeAssets.tree",
+          "name": "Claude Asset Manager",
+          "icon": "media/claude-assets.svg",
+          "contextualTitle": "Claude Asset Manager"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "claudeAssets.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)",
+        "category": "Claude Assets"
+      },
+      {
+        "command": "claudeAssets.addDirectory",
+        "title": "Add Directory",
+        "icon": "$(add)",
+        "category": "Claude Assets"
+      },
+      {
+        "command": "claudeAssets.removeDirectory",
+        "title": "Remove Directory",
+        "category": "Claude Assets"
+      },
+      {
+        "command": "claudeAssets.openFile",
+        "title": "Open File",
+        "category": "Claude Assets"
+      },
+      {
+        "command": "claudeAssets.openPreview",
+        "title": "Open Preview",
+        "category": "Claude Assets"
+      },
+      {
+        "command": "claudeAssets.revealInOS",
+        "title": "Reveal in File Manager",
+        "category": "Claude Assets"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "claudeAssets.refresh",
+          "when": "view == claudeAssets.tree",
+          "group": "navigation"
+        },
+        {
+          "command": "claudeAssets.addDirectory",
+          "when": "view == claudeAssets.tree",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "claudeAssets.openFile",
+          "when": "view == claudeAssets.tree && viewItem =~ /asset/",
+          "group": "open"
+        },
+        {
+          "command": "claudeAssets.openPreview",
+          "when": "view == claudeAssets.tree && viewItem =~ /asset-md/",
+          "group": "open"
+        },
+        {
+          "command": "claudeAssets.revealInOS",
+          "when": "view == claudeAssets.tree && viewItem =~ /asset/",
+          "group": "reveal"
+        },
+        {
+          "command": "claudeAssets.removeDirectory",
+          "when": "view == claudeAssets.tree && viewItem == registeredRoot",
+          "group": "manage"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Claude Assets",
+      "properties": {
+        "claudeAssets.directories": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Additional directories to scan for Claude assets."
+        },
+        "claudeAssets.followSymlinks": {
+          "type": "boolean",
+          "default": true,
+          "description": "Follow symbolic links when scanning for assets."
+        },
+        "claudeAssets.excludeDirs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [
+            "node_modules", ".git", "bin", "obj", "dist",
+            "target", ".venv", "venv", ".idea", ".vs"
+          ],
+          "description": "Directory names to exclude from recursive scans."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -p . --watch",
+    "test": "npm run compile && TS_NODE_PROJECT=tsconfig.test.json mocha"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.90.0",
+    "mocha": "^10.4.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "yaml": "^2.4.2"
+  }
+}

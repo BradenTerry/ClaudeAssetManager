@@ -67,7 +67,8 @@ export function activate(context: vscode.ExtensionContext): void {
           const id = ids[i];
           progress.report({ message: `${id} (${i + 1}/${ids.length})`, increment: 100 / ids.length });
           const result = await new Promise<{ ok: boolean; output: string }>(resolve => {
-            execFile('claude', ['plugin', 'update', id], { timeout: 120000 }, (err, stdout, stderr) => {
+            // On Windows the CLI is a `claude.cmd` shim; execFile only resolves it via a shell.
+            execFile('claude', ['plugin', 'update', id], { timeout: 120000, shell: process.platform === 'win32' }, (err, stdout, stderr) => {
               resolve({ ok: !err, output: `${stdout ?? ''}${stderr ?? ''}`.trim() });
             });
           });
@@ -272,7 +273,8 @@ export function activate(context: vscode.ExtensionContext): void {
           cancellable: false
         },
         () => new Promise<{ ok: boolean; output: string }>(resolve => {
-          execFile('claude', ['plugin', 'uninstall', id], { timeout: 120000 }, (err, stdout, stderr) => {
+          // On Windows the CLI is a `claude.cmd` shim; execFile only resolves it via a shell.
+          execFile('claude', ['plugin', 'uninstall', id], { timeout: 120000, shell: process.platform === 'win32' }, (err, stdout, stderr) => {
             resolve({ ok: !err, output: `${stdout ?? ''}${stderr ?? ''}`.trim() });
           });
         })

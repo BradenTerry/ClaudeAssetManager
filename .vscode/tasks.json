@@ -21,6 +21,13 @@
       "label": "npm: compile",
       "problemMatcher": "$tsc",
       "group": "build"
+    },
+    {
+      "type": "npm",
+      "script": "bundle",
+      "label": "npm: bundle",
+      "problemMatcher": [],
+      "group": "build"
     }
   ]
 }

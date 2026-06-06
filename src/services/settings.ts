@@ -16,6 +16,10 @@ export function getExcludeDirs(): string[] {
   ]);
 }
 
+export function getMaxDepth(): number {
+  return vscode.workspace.getConfiguration(CONFIG_SECTION).get<number>('maxDepth', 6);
+}
+
 export async function addDirectory(dirPath: string): Promise<void> {
   const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
   const current = config.get<string[]>('directories', []);

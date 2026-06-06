@@ -12,9 +12,12 @@ export function scan(roots: ScanRoot[], opts: ScanOptions): ClaudeAsset[] {
   // visited real paths -- guards against symlink cycles across the entire scan
   const visited = new Set<string>();
 
+  const maxDepth = opts.maxDepth ?? Infinity;
   for (const root of roots) {
-    // Determine effective scope for files found in this root
-    scanDir(root.path, root.scope, root, opts, visited, assets);
+    const rootInside =
+      !!root.isGlobal || !!root.isPlugins || !!root.isMemory ||
+      path.basename(root.path) === '.claude';
+    scanDir(root.path, root.scope, root, opts, visited, assets, 0, rootInside, maxDepth);
   }
 
   return assets;
@@ -34,7 +37,10 @@ function scanDir(
   root: ScanRoot,
   opts: ScanOptions,
   visited: Set<string>,
-  assets: ClaudeAsset[]
+  assets: ClaudeAsset[],
+  depth: number,
+  insideClaude: boolean,
+  maxDepth: number
 ): void {
   // Resolve and guard cycles
   const realPath = resolveRealPath(dirPath);
@@ -70,7 +76,14 @@ function scanDir(
         // those subtrees are covered by dedicated scan roots.
         if (isGlobalRootTopLevelPrunedDir(entryPath, dirPath, root)) continue;
         const effectiveScope = deriveScope(entryPath, root, scope);
-        scanDir(entryPath, effectiveScope, root, opts, visited, assets);
+        const childIsClaude = entry.name === '.claude';
+        if (insideClaude || childIsClaude) {
+          scanDir(entryPath, effectiveScope, root, opts, visited, assets, depth, true, maxDepth);
+        } else {
+          const newDepth = depth + 1;
+          if (newDepth > maxDepth) continue;
+          scanDir(entryPath, effectiveScope, root, opts, visited, assets, newDepth, false, maxDepth);
+        }
       } else if (targetStat.isFile()) {
         const effectiveScope = deriveScope(entryPath, root, scope);
         tryAddAsset(entryPath, effectiveScope, root, assets);
@@ -81,7 +94,14 @@ function scanDir(
       // those subtrees are covered by dedicated scan roots.
       if (isGlobalRootTopLevelPrunedDir(entryPath, dirPath, root)) continue;
       const effectiveScope = deriveScope(entryPath, root, scope);
-      scanDir(entryPath, effectiveScope, root, opts, visited, assets);
+      const childIsClaude = entry.name === '.claude';
+      if (insideClaude || childIsClaude) {
+        scanDir(entryPath, effectiveScope, root, opts, visited, assets, depth, true, maxDepth);
+      } else {
+        const newDepth = depth + 1;
+        if (newDepth > maxDepth) continue;
+        scanDir(entryPath, effectiveScope, root, opts, visited, assets, newDepth, false, maxDepth);
+      }
     } else if (entry.isFile()) {
       const effectiveScope = deriveScope(entryPath, root, scope);
       tryAddAsset(entryPath, effectiveScope, root, assets);

@@ -42,4 +42,6 @@ export interface ScanRoot {
 export interface ScanOptions {
   excludeDirs: string[];
   followSymlinks: boolean;
+  /** Max non-.claude directory depth to search before giving up. undefined = unlimited. */
+  maxDepth?: number;
 }

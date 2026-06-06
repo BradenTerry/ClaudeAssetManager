@@ -112,6 +112,39 @@ npm run package   # build a .vsix
   (`claude`) must be on your `PATH`. On macOS, launch VSCode from a terminal so the extension host
   inherits your shell `PATH`; otherwise the CLI commands may not find `claude`.
 
+## Contributing
+
+Contributions are welcome. To get started:
+
+1. **Fork and clone** the repository, then create a branch off `main`:
+
+   ```bash
+   git clone https://github.com/<your-username>/ClaudeAssetManager.git
+   cd ClaudeAssetManager
+   npm install
+   git checkout -b my-change
+   ```
+
+2. **Make your change** in `src/`. Use spaces for indentation and match the existing TypeScript
+   style. The codebase layout is described in [PROJECT_MAP.md](PROJECT_MAP.md).
+
+3. **Build and test** before opening a PR:
+
+   ```bash
+   npm run compile   # type-check the project
+   npm test          # run the Mocha test suite
+   ```
+
+   Add or update tests under `test/` for any behavior you change.
+
+4. **Run it locally** with `F5` (Extension Development Host) to confirm your change works in the UI.
+
+5. **Open a pull request** against `main`. Keep the change focused, describe what it does and why,
+   and reference any related issue. CI runs the build and tests on each PR.
+
+For larger changes, open an issue first to discuss the approach. Bug reports and feature requests
+are also welcome in the [issue tracker](https://github.com/BradenTerry/ClaudeAssetManager/issues).
+
 ## Issues and support
 
 Open an issue at

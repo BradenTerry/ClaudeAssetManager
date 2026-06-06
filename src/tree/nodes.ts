@@ -11,7 +11,7 @@ import {
   WorktreeNameFolderNodeDescriptor
 } from './nodeDescriptors';
 
-export type TreeNode = ContainerNode | PluginFolderNode | GroupNode | AssetNode | WorktreesFolderNode | WorktreeNameFolderNode;
+export type TreeNode = ContainerNode | PluginFolderNode | GroupNode | AssetNode | WorktreesFolderNode | WorktreeNameFolderNode | FsDirNode | FsFileNode;
 
 export class ContainerNode extends vscode.TreeItem {
   readonly kind = NodeKind.Container;
@@ -26,8 +26,15 @@ export class ContainerNode extends vscode.TreeItem {
         : vscode.TreeItemCollapsibleState.Collapsed
     );
     this.containerKind = desc.containerKind;
-    this.contextValue = 'assetContainer';
+    this.contextValue = desc.contextValue ?? 'assetContainer';
     this.iconPath = new vscode.ThemeIcon('folder');
+    if (desc.dirPath !== undefined) {
+      this.resourceUri = vscode.Uri.file(desc.dirPath);
+      this.tooltip = desc.dirPath;
+    }
+    if (desc.description !== undefined) {
+      this.description = desc.description;
+    }
     this.children = desc.children.map(child => {
       if (child.kind === NodeKind.Container) {
         return new ContainerNode(child as ContainerNodeDescriptor);
@@ -50,17 +57,15 @@ export class ContainerNode extends vscode.TreeItem {
 export class PluginFolderNode extends vscode.TreeItem {
   readonly kind = NodeKind.PluginFolder;
   readonly pluginName: string;
+  readonly pluginId: string | undefined;
   readonly children: GroupNode[];
 
   constructor(desc: PluginFolderNodeDescriptor) {
     super(desc.label, vscode.TreeItemCollapsibleState.Collapsed);
     this.pluginName = desc.pluginName;
-    this.contextValue = 'assetPluginFolder';
-    if (desc.outdated) {
-      this.iconPath = new vscode.ThemeIcon('arrow-circle-up');
-    } else {
-      this.iconPath = new vscode.ThemeIcon('folder');
-    }
+    this.pluginId = desc.pluginId;
+    this.contextValue = desc.outdated ? 'assetPluginFolderOutdated' : 'assetPluginFolder';
+    this.iconPath = new vscode.ThemeIcon('folder');
     if (desc.description !== undefined) {
       this.description = desc.description;
     }
@@ -72,12 +77,53 @@ export class GroupNode extends vscode.TreeItem {
   readonly kind = NodeKind.Group;
   readonly children: AssetNode[];
   readonly assetType: AssetType;
+  /** When set, children are listed lazily from this real directory (Skills, Agents). */
+  readonly dirPath: string | undefined;
 
   constructor(desc: GroupNodeDescriptor) {
     super(desc.label, vscode.TreeItemCollapsibleState.Collapsed);
     this.assetType = desc.assetType;
+    this.dirPath = desc.dirPath;
     this.children = desc.children.map(c => new AssetNode(c));
     this.contextValue = 'assetGroup';
+  }
+}
+
+/**
+ * A real directory rendered live from the filesystem (a skill folder, or any
+ * subdirectory beneath a Skills/Agents tree). Children are listed lazily by the
+ * tree provider when expanded.
+ */
+export class FsDirNode extends vscode.TreeItem {
+  readonly kind = NodeKind.FsDir;
+  readonly dirPath: string;
+
+  constructor(dirPath: string, label: string) {
+    super(label, vscode.TreeItemCollapsibleState.Collapsed);
+    this.dirPath = dirPath;
+    this.resourceUri = vscode.Uri.file(dirPath);
+    this.tooltip = dirPath;
+    this.contextValue = 'fsDir';
+  }
+}
+
+/** A real file rendered live from the filesystem. Label keeps the extension. */
+export class FsFileNode extends vscode.TreeItem {
+  readonly kind = NodeKind.FsFile;
+  readonly filePath: string;
+
+  constructor(filePath: string, label: string) {
+    super(label, vscode.TreeItemCollapsibleState.None);
+    this.filePath = filePath;
+    this.resourceUri = vscode.Uri.file(filePath);
+    this.tooltip = filePath;
+    const isMarkdown = label.toLowerCase().endsWith('.md');
+    this.contextValue = isMarkdown ? 'fsFileMd' : 'fsFile';
+    this.command = {
+      command: isMarkdown ? 'claudeAssets.openPreview' : 'claudeAssets.openFile',
+      title: 'Open',
+      arguments: [filePath]
+    };
   }
 }
 

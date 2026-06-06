@@ -2,6 +2,10 @@ import * as fs from 'fs';
 
 export interface InstalledPluginInfo {
   name: string;
+  /** Full identifier "name@marketplace" (the installed_plugins.json key); passed to `claude plugin update` */
+  id: string;
+  /** Marketplace portion of the key, or "" when the key has no @ */
+  marketplace: string;
   /** Semantic version string, or "unknown" */
   version: string;
   /** Absolute path to the cache copy of the plugin, e.g. ~/.claude/plugins/cache/<mk>/<plugin>/<version> */
@@ -36,12 +40,13 @@ export function readInstalledPlugins(filePath: string): Map<string, InstalledPlu
       const atIdx = key.indexOf('@');
       const name = atIdx !== -1 ? key.slice(0, atIdx) : key;
       if (!name) continue;
+      const marketplace = atIdx !== -1 ? key.slice(atIdx + 1) : '';
 
       const installPath = typeof entry['installPath'] === 'string' ? entry['installPath'] : '';
       const version = typeof entry['version'] === 'string' ? entry['version'] : 'unknown';
       const lastUpdated = typeof entry['lastUpdated'] === 'string' ? entry['lastUpdated'] : '';
 
-      result.set(name, { name, version, installPath, lastUpdated });
+      result.set(name, { name, id: key, marketplace, version, installPath, lastUpdated });
     }
     return result;
   } catch {
@@ -51,11 +56,14 @@ export function readInstalledPlugins(filePath: string): Map<string, InstalledPlu
 
 /**
  * Read ~/.claude/plugins/plugin-catalog-cache.json and return a map from
- * plugin name to the catalog's last_updated timestamp string.
+ * plugin name to the catalog's published `version` string.
  *
- * Returns an empty Map if the file is missing, unreadable, or malformed.
+ * The catalog's `last_updated` field tracks marketplace-metadata churn and is
+ * unrelated to whether the user's install is behind, so version is the only
+ * reliable "what's the latest" signal. Returns an empty Map if the file is
+ * missing, unreadable, or malformed.
  */
-export function readCatalogLastUpdated(filePath: string): Map<string, string> {
+export function readCatalogVersions(filePath: string): Map<string, string> {
   try {
     const raw = fs.readFileSync(filePath, 'utf8');
     const data = JSON.parse(raw) as Record<string, unknown>;
@@ -78,9 +86,9 @@ export function readCatalogLastUpdated(filePath: string): Map<string, string> {
       const name = atIdx !== -1 ? key.slice(0, atIdx) : key;
       if (!name) continue;
 
-      const lastUpdated = (entry as Record<string, unknown>)['last_updated'];
-      if (typeof lastUpdated === 'string' && lastUpdated) {
-        result.set(name, lastUpdated);
+      const version = (entry as Record<string, unknown>)['version'];
+      if (typeof version === 'string' && version) {
+        result.set(name, version);
       }
     }
     return result;
@@ -89,18 +97,30 @@ export function readCatalogLastUpdated(filePath: string): Map<string, string> {
   }
 }
 
+/** Compare two dotted numeric version strings. Returns >0 if a is newer than b. */
+function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map(n => parseInt(n, 10));
+  const pb = b.split('.').map(n => parseInt(n, 10));
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const x = Number.isFinite(pa[i]) ? pa[i] : 0;
+    const y = Number.isFinite(pb[i]) ? pb[i] : 0;
+    if (x !== y) return x - y;
+  }
+  return 0;
+}
+
 /**
- * Returns true when the catalog has a newer last_updated timestamp than the
- * plugin's installed lastUpdated. Returns false when either timestamp is
- * missing, unparseable, or catalogLastUpdated <= installed.lastUpdated.
+ * Returns true only when both the installed and catalog versions are concrete
+ * (present and not "unknown") and the catalog version is strictly newer.
+ *
+ * Version-less plugins (installed "unknown" or no catalog version) carry no
+ * reliable update signal, so they are never flagged -- this avoids the
+ * permanent false positive that a timestamp comparison would produce.
  */
-export function isOutdated(installed: InstalledPluginInfo, catalogLastUpdated: string | undefined): boolean {
-  if (!catalogLastUpdated) return false;
-
-  const installedTs = new Date(installed.lastUpdated).getTime();
-  const catalogTs = new Date(catalogLastUpdated).getTime();
-
-  if (isNaN(installedTs) || isNaN(catalogTs)) return false;
-
-  return catalogTs > installedTs;
+export function isOutdated(installed: InstalledPluginInfo, catalogVersion: string | undefined): boolean {
+  const iv = installed.version;
+  if (!iv || iv === 'unknown') return false;
+  if (!catalogVersion || catalogVersion === 'unknown') return false;
+  return compareVersions(catalogVersion, iv) > 0;
 }

@@ -1,8 +1,45 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
 import { ClaudeAsset } from '../core/types';
 import { buildTreeNodes, PluginMetadataOptions } from './nodeDescriptors';
-import { ContainerNode, PluginFolderNode, GroupNode, AssetNode, WorktreesFolderNode, WorktreeNameFolderNode, TreeNode } from './nodes';
+import { ContainerNode, PluginFolderNode, GroupNode, AssetNode, WorktreesFolderNode, WorktreeNameFolderNode, FsDirNode, FsFileNode, TreeNode } from './nodes';
 import { ContainerNodeDescriptor } from './nodeDescriptors';
+
+/**
+ * List a real directory's contents as tree nodes: subdirectories first (alpha),
+ * then files (alpha), each label keeping its full name and extension. Symlinks
+ * are resolved so linked dirs/files render correctly. Returns [] if unreadable.
+ */
+function listDirectory(dirPath: string): TreeNode[] {
+  let names: string[];
+  try {
+    names = fs.readdirSync(dirPath);
+  } catch {
+    return [];
+  }
+  const dirs: FsDirNode[] = [];
+  const files: FsFileNode[] = [];
+  for (const name of names.sort((a, b) => a.localeCompare(b))) {
+    // Skip dotfiles/dotdirs (e.g. .DS_Store, .git) -- noise, not assets.
+    if (name.startsWith('.')) {
+      continue;
+    }
+    const full = path.join(dirPath, name);
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(full); // follows symlinks
+    } catch {
+      continue;
+    }
+    if (stat.isDirectory()) {
+      dirs.push(new FsDirNode(full, name));
+    } else if (stat.isFile()) {
+      files.push(new FsFileNode(full, name));
+    }
+  }
+  return [...dirs, ...files];
+}
 
 /**
  * Backs a single sidebar section (its own view). `section` selects which top-level
@@ -59,7 +96,15 @@ export class AssetTreeProvider implements vscode.TreeDataProvider<TreeNode> {
       return element.children;
     }
     if (element instanceof GroupNode) {
-      return element.children;
+      // Skills/Agents groups mirror a real directory; everything else uses
+      // the precomputed asset children.
+      return element.dirPath ? listDirectory(element.dirPath) : element.children;
+    }
+    if (element instanceof FsDirNode) {
+      return listDirectory(element.dirPath);
+    }
+    if (element instanceof FsFileNode) {
+      return [];
     }
     return [];
   }

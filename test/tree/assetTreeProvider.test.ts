@@ -67,40 +67,52 @@ describe('Tree node descriptors -- AC12: type groups per asset type (nested insi
     assert.strictEqual(cmdGroup, undefined, 'Command group should not appear when no commands present');
   });
 
-  it('expanding a group returns that type assets as items', () => {
+  it('Skills and Agents groups defer to a backing directory (dirPath), with no precomputed children', () => {
     const assets: ClaudeAsset[] = [
-      makeAsset(AssetType.Skill, 'skill-a', '/skills/a/SKILL.md'),
-      makeAsset(AssetType.Skill, 'skill-b', '/skills/b/SKILL.md'),
-      makeAsset(AssetType.Subagent, 'agent-a', '/agents/a.md')
+      makeAsset(AssetType.Skill, 'skill-a', '/home/user/.claude/skills/skill-a/SKILL.md'),
+      makeAsset(AssetType.Subagent, 'agent-a', '/home/user/.claude/agents/agent-a.md')
     ];
 
     const nodes = buildTreeNodes(assets);
     const groups = getGlobalGroups(nodes);
-    const skillGroup = groups.find(g => g.assetType === AssetType.Skill)!;
-    assert.ok(skillGroup, 'expected Skill group');
 
-    const children = skillGroup.children;
-    assert.strictEqual(children.length, 2, 'expected 2 skill children');
-    assert.ok(children.every(c => c.kind === NodeKind.Asset), 'all children should be Asset nodes');
-    const names = (children as AssetNodeDescriptor[]).map(c => c.asset.name);
-    assert.ok(names.includes('skill-a'));
-    assert.ok(names.includes('skill-b'));
+    const skillGroup = groups.find(g => g.assetType === AssetType.Skill)!;
+    assert.strictEqual(skillGroup.dirPath, '/home/user/.claude/skills', 'Skills group mirrors the skills/ root');
+    assert.strictEqual(skillGroup.children.length, 0, 'skill children come lazily from disk');
+
+    const agentGroup = groups.find(g => g.assetType === AssetType.Subagent)!;
+    assert.strictEqual(agentGroup.dirPath, '/home/user/.claude/agents', 'Agents group mirrors the agents/ root');
+    assert.strictEqual(agentGroup.children.length, 0, 'agent children come lazily from disk');
+  });
+
+  it('Command group lists its assets as precomputed Asset children sorted alpha', () => {
+    const assets: ClaudeAsset[] = [
+      makeAsset(AssetType.Command, 'cmd-b', '/home/user/.claude/commands/cmd-b.md'),
+      makeAsset(AssetType.Command, 'cmd-a', '/home/user/.claude/commands/cmd-a.md')
+    ];
+
+    const nodes = buildTreeNodes(assets);
+    const groups = getGlobalGroups(nodes);
+    const cmdGroup = groups.find(g => g.assetType === AssetType.Command)!;
+    assert.strictEqual(cmdGroup.dirPath, undefined, 'Command group is not directory-backed');
+    const names = (cmdGroup.children as AssetNodeDescriptor[]).map(c => c.asset.name);
+    assert.deepStrictEqual(names, ['cmd-a', 'cmd-b']);
   });
 });
 
 describe('Tree node descriptors -- AC14: asset node fields', () => {
   it('asset node carries filePath, resourceUri-compatible path, and contextValue', () => {
-    const filePath = '/home/user/.claude/skills/my-skill/SKILL.md';
-    const asset = makeAsset(AssetType.Skill, 'my-skill', filePath, AssetScope.Global, 'A great skill');
+    const filePath = '/home/user/.claude/commands/my-cmd.md';
+    const asset = makeAsset(AssetType.Command, 'my-cmd', filePath, AssetScope.Global, 'A great command');
 
     const nodes = buildTreeNodes([asset]);
     const groups = getGlobalGroups(nodes);
-    const skillGroup = groups.find(g => g.assetType === AssetType.Skill)!;
-    const assetNode = skillGroup.children[0] as AssetNodeDescriptor;
+    const cmdGroup = groups.find(g => g.assetType === AssetType.Command)!;
+    const assetNode = cmdGroup.children[0] as AssetNodeDescriptor;
 
     assert.strictEqual(assetNode.asset.filePath, filePath, 'filePath must match');
     assert.strictEqual(assetNode.contextValue, 'asset-md-global', 'contextValue should reflect type and scope');
-    assert.strictEqual(assetNode.label, 'my-skill');
+    assert.strictEqual(assetNode.label, 'my-cmd');
     assert.strictEqual(assetNode.tooltip, filePath);
   });
 
@@ -117,13 +129,13 @@ describe('Tree node descriptors -- AC14: asset node fields', () => {
   });
 
   it('markdown asset contextValue includes -md- for markdown files', () => {
-    const filePath = '/home/user/.claude/agents/my-agent.md';
-    const asset = makeAsset(AssetType.Subagent, 'my-agent', filePath, AssetScope.Global);
+    const filePath = '/home/user/.claude/commands/my-cmd.md';
+    const asset = makeAsset(AssetType.Command, 'my-cmd', filePath, AssetScope.Global);
 
     const nodes = buildTreeNodes([asset]);
     const groups = getGlobalGroups(nodes);
-    const agentGroup = groups.find(g => g.assetType === AssetType.Subagent)!;
-    const assetNode = agentGroup.children[0] as AssetNodeDescriptor;
+    const cmdGroup = groups.find(g => g.assetType === AssetType.Command)!;
+    const assetNode = cmdGroup.children[0] as AssetNodeDescriptor;
 
     assert.ok(assetNode.contextValue.includes('-md-'), 'markdown asset should have -md- in contextValue');
   });
@@ -131,13 +143,13 @@ describe('Tree node descriptors -- AC14: asset node fields', () => {
 
 describe('Tree node descriptors -- default click command', () => {
   it('markdown asset descriptor has commandId claudeAssets.openPreview', () => {
-    const filePath = '/home/user/.claude/skills/my-skill/SKILL.md';
-    const asset = makeAsset(AssetType.Skill, 'my-skill', filePath, AssetScope.Global);
+    const filePath = '/home/user/.claude/commands/my-cmd.md';
+    const asset = makeAsset(AssetType.Command, 'my-cmd', filePath, AssetScope.Global);
 
     const nodes = buildTreeNodes([asset]);
     const groups = getGlobalGroups(nodes);
-    const skillGroup = groups.find(g => g.assetType === AssetType.Skill)!;
-    const assetNode = skillGroup.children[0] as AssetNodeDescriptor;
+    const cmdGroup = groups.find(g => g.assetType === AssetType.Command)!;
+    const assetNode = cmdGroup.children[0] as AssetNodeDescriptor;
 
     assert.strictEqual(assetNode.commandId, 'claudeAssets.openPreview', 'markdown asset default command should be openPreview');
     assert.strictEqual(assetNode.commandArgs[0], filePath, 'command argument should be the filePath');
@@ -154,18 +166,6 @@ describe('Tree node descriptors -- default click command', () => {
     assert.ok(assetNode, 'expected Config leaf');
     assert.strictEqual(assetNode.commandId, 'claudeAssets.openFile', 'config asset default command should be openFile');
     assert.strictEqual(assetNode.commandArgs[0], filePath, 'command argument should be the filePath');
-  });
-
-  it('subagent (markdown) asset descriptor has commandId claudeAssets.openPreview', () => {
-    const filePath = '/home/user/.claude/agents/my-agent.md';
-    const asset = makeAsset(AssetType.Subagent, 'my-agent', filePath, AssetScope.Global);
-
-    const nodes = buildTreeNodes([asset]);
-    const groups = getGlobalGroups(nodes);
-    const agentGroup = groups.find(g => g.assetType === AssetType.Subagent)!;
-    const assetNode = agentGroup.children[0] as AssetNodeDescriptor;
-
-    assert.strictEqual(assetNode.commandId, 'claudeAssets.openPreview');
   });
 
   it('AssetNode TreeItem command uses commandId and commandArgs from descriptor (ClaudeMd is flat leaf)', () => {

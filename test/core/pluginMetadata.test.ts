@@ -3,7 +3,7 @@ import * as path from 'path';
 import { makeTempDir, writeFile } from './fixtures';
 import {
   readInstalledPlugins,
-  readCatalogLastUpdated,
+  readCatalogVersions,
   isOutdated,
   InstalledPluginInfo
 } from '../../src/core/pluginMetadata';
@@ -169,11 +169,11 @@ describe('readInstalledPlugins', () => {
 });
 
 // ---------------------------------------------------------------------------
-// readCatalogLastUpdated
+// readCatalogVersions
 // ---------------------------------------------------------------------------
 
-describe('readCatalogLastUpdated', () => {
-  it('AC-PM5: parses a valid catalog cache and returns last_updated by plugin name', () => {
+describe('readCatalogVersions', () => {
+  it('AC-PM5: parses a valid catalog cache and returns version by plugin name', () => {
     const { root, cleanup } = makeTempDir();
     try {
       const filePath = path.join(root, 'plugin-catalog-cache.json');
@@ -184,20 +184,20 @@ describe('readCatalogLastUpdated', () => {
           plugins: {
             'skill-creator@mk': {
               plugin: 'skill-creator',
-              last_updated: '2025-07-01T00:00:00Z',
-              sha: 'abc123'
+              version: '2.1.0',
+              last_updated: '2025-07-01T00:00:00Z'
             }
           }
         }
       });
       writeFile(filePath, content);
 
-      const result = readCatalogLastUpdated(filePath);
+      const result = readCatalogVersions(filePath);
 
       assert.ok(result instanceof Map);
       assert.strictEqual(result.size, 1);
       assert.ok(result.has('skill-creator'));
-      assert.strictEqual(result.get('skill-creator'), '2025-07-01T00:00:00Z');
+      assert.strictEqual(result.get('skill-creator'), '2.1.0');
     } finally {
       cleanup();
     }
@@ -214,24 +214,44 @@ describe('readCatalogLastUpdated', () => {
           plugins: {
             'claude-code-setup@claude-plugins-official': {
               plugin: 'claude-code-setup',
-              last_updated: '2025-08-01T00:00:00Z',
-              sha: 'def456'
+              version: '1.0.0'
             }
           }
         }
       });
       writeFile(filePath, content);
 
-      const result = readCatalogLastUpdated(filePath);
+      const result = readCatalogVersions(filePath);
       assert.ok(result.has('claude-code-setup'));
-      assert.strictEqual(result.get('claude-code-setup'), '2025-08-01T00:00:00Z');
+      assert.strictEqual(result.get('claude-code-setup'), '1.0.0');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC-PM5c: skips entries that have no version field', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'plugin-catalog-cache.json');
+      const content = JSON.stringify({
+        version: 1,
+        catalog: {
+          plugins: {
+            'frontend-design@mk': { plugin: 'frontend-design', source_sha: 'abc' }
+          }
+        }
+      });
+      writeFile(filePath, content);
+
+      const result = readCatalogVersions(filePath);
+      assert.strictEqual(result.size, 0);
     } finally {
       cleanup();
     }
   });
 
   it('AC-PM6: returns empty Map when file does not exist', () => {
-    const result = readCatalogLastUpdated('/nonexistent/path/plugin-catalog-cache.json');
+    const result = readCatalogVersions('/nonexistent/path/plugin-catalog-cache.json');
     assert.ok(result instanceof Map);
     assert.strictEqual(result.size, 0);
   });
@@ -242,7 +262,7 @@ describe('readCatalogLastUpdated', () => {
       const filePath = path.join(root, 'plugin-catalog-cache.json');
       writeFile(filePath, 'not json');
 
-      const result = readCatalogLastUpdated(filePath);
+      const result = readCatalogVersions(filePath);
       assert.ok(result instanceof Map);
       assert.strictEqual(result.size, 0);
     } finally {
@@ -256,7 +276,7 @@ describe('readCatalogLastUpdated', () => {
       const filePath = path.join(root, 'plugin-catalog-cache.json');
       writeFile(filePath, JSON.stringify({ version: 1, fetchedAt: '2025-01-01T00:00:00Z' }));
 
-      const result = readCatalogLastUpdated(filePath);
+      const result = readCatalogVersions(filePath);
       assert.ok(result instanceof Map);
       assert.strictEqual(result.size, 0);
     } finally {
@@ -266,51 +286,48 @@ describe('readCatalogLastUpdated', () => {
 });
 
 // ---------------------------------------------------------------------------
-// isOutdated
+// isOutdated (version comparison)
 // ---------------------------------------------------------------------------
 
 describe('isOutdated', () => {
-  function makeInfo(lastUpdated: string): InstalledPluginInfo {
+  function makeInfo(version: string): InstalledPluginInfo {
     return {
       name: 'test-plugin',
-      version: 'unknown',
-      installPath: '/abs/cache/test-plugin/unknown',
-      lastUpdated
+      id: 'test-plugin@mk',
+      marketplace: 'mk',
+      version,
+      installPath: '/abs/cache/test-plugin/1.0.0',
+      lastUpdated: '2025-06-01T00:00:00Z'
     };
   }
 
-  it('AC-PM7: returns true when catalogLastUpdated is newer than installed lastUpdated', () => {
-    const info = makeInfo('2025-06-01T00:00:00Z');
-    assert.strictEqual(isOutdated(info, '2025-07-01T00:00:00Z'), true);
+  it('AC-PM7: returns true when catalog version is newer than installed version', () => {
+    assert.strictEqual(isOutdated(makeInfo('1.0.0'), '1.1.0'), true);
+    assert.strictEqual(isOutdated(makeInfo('1.0.0'), '2.0.0'), true);
+    assert.strictEqual(isOutdated(makeInfo('1.0.9'), '1.0.10'), true);
   });
 
-  it('AC-PM8: returns false when catalogLastUpdated equals installed lastUpdated', () => {
-    const info = makeInfo('2025-07-01T00:00:00Z');
-    assert.strictEqual(isOutdated(info, '2025-07-01T00:00:00Z'), false);
+  it('AC-PM8: returns false when catalog version equals installed version', () => {
+    assert.strictEqual(isOutdated(makeInfo('1.0.0'), '1.0.0'), false);
   });
 
-  it('AC-PM8b: returns false when catalogLastUpdated is older than installed lastUpdated', () => {
-    const info = makeInfo('2025-07-01T00:00:00Z');
-    assert.strictEqual(isOutdated(info, '2025-06-01T00:00:00Z'), false);
+  it('AC-PM8b: returns false when catalog version is older than installed version', () => {
+    assert.strictEqual(isOutdated(makeInfo('2.0.0'), '1.5.0'), false);
   });
 
-  it('AC-PM9: returns false when installed lastUpdated is unparseable', () => {
-    const info = makeInfo('unknown');
-    assert.strictEqual(isOutdated(info, '2025-07-01T00:00:00Z'), false);
+  it('AC-PM9: returns false when installed version is "unknown"', () => {
+    assert.strictEqual(isOutdated(makeInfo('unknown'), '1.0.0'), false);
   });
 
-  it('AC-PM9b: returns false when catalogLastUpdated is undefined', () => {
-    const info = makeInfo('2025-06-01T00:00:00Z');
-    assert.strictEqual(isOutdated(info, undefined), false);
+  it('AC-PM9b: returns false when catalog version is undefined', () => {
+    assert.strictEqual(isOutdated(makeInfo('1.0.0'), undefined), false);
   });
 
-  it('AC-PM9c: returns false when catalogLastUpdated is an empty string', () => {
-    const info = makeInfo('2025-06-01T00:00:00Z');
-    assert.strictEqual(isOutdated(info, ''), false);
+  it('AC-PM9c: returns false when catalog version is an empty string', () => {
+    assert.strictEqual(isOutdated(makeInfo('1.0.0'), ''), false);
   });
 
-  it('AC-PM9d: returns false when both timestamps are unparseable', () => {
-    const info = makeInfo('unknown');
-    assert.strictEqual(isOutdated(info, 'also-unknown'), false);
+  it('AC-PM9d: returns false when catalog version is "unknown"', () => {
+    assert.strictEqual(isOutdated(makeInfo('1.0.0'), 'unknown'), false);
   });
 });

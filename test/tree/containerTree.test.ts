@@ -139,7 +139,7 @@ describe('buildTreeNodes -- Global container children', () => {
     assert.strictEqual(secondChild.assetType, AssetType.Skill, 'second child group should be Skills');
   });
 
-  it('Global type-group children are asset nodes sorted alpha by name', () => {
+  it('Skills group mirrors the skills/ directory (dirPath set, children listed lazily)', () => {
     const assets: ClaudeAsset[] = [
       makeAsset(AssetType.Skill, 'zebra-skill', '/home/user/.claude/skills/zebra-skill/SKILL.md', AssetScope.Global, '/home/user/.claude'),
       makeAsset(AssetType.Skill, 'alpha-skill', '/home/user/.claude/skills/alpha-skill/SKILL.md', AssetScope.Global, '/home/user/.claude')
@@ -147,8 +147,8 @@ describe('buildTreeNodes -- Global container children', () => {
     const nodes = buildTreeNodes(assets);
     const globalContainer = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global')!;
     const skillGroup = globalContainer.children.find(c => (c as GroupNodeDescriptor).assetType === AssetType.Skill) as GroupNodeDescriptor;
-    const names = skillGroup.children.map(c => (c as AssetNodeDescriptor).label);
-    assert.deepStrictEqual(names, ['alpha-skill', 'zebra-skill'], 'assets should be sorted alpha by name');
+    assert.strictEqual(skillGroup.dirPath, '/home/user/.claude/skills', 'Skills group should point at the skills/ root');
+    assert.strictEqual(skillGroup.children.length, 0, 'skill children are listed lazily from disk');
   });
 });
 
@@ -199,15 +199,15 @@ describe('buildTreeNodes -- Plugins folder children (nested inside Global)', () 
   });
 
   it('Plugin-folder type-group asset nodes have asset-md contextValue and openPreview command', () => {
-    const filePath = '/home/user/.claude/plugins/cache/mk/myplugin/1.0/skills/p-skill/SKILL.md';
+    const filePath = '/home/user/.claude/plugins/cache/mk/myplugin/1.0/commands/p-cmd.md';
     const assets: ClaudeAsset[] = [
-      makeAsset(AssetType.Skill, 'p-skill', filePath, AssetScope.Plugin, '/home/user/.claude/plugins')
+      makeAsset(AssetType.Command, 'p-cmd', filePath, AssetScope.Plugin, '/home/user/.claude/plugins')
     ];
     const nodes = buildTreeNodes(assets);
     const pluginsContainer = getPluginsFromGlobal(nodes)!;
     const pluginFolder = pluginsContainer.children[0] as PluginFolderNodeDescriptor;
-    const skillGroup = pluginFolder.children[0] as GroupNodeDescriptor;
-    const assetNode = skillGroup.children[0] as AssetNodeDescriptor;
+    const cmdGroup = pluginFolder.children[0] as GroupNodeDescriptor;
+    const assetNode = cmdGroup.children[0] as AssetNodeDescriptor;
     assert.strictEqual(assetNode.kind, NodeKind.Asset);
     assert.ok(assetNode.contextValue.includes('-md-'), 'plugin asset should have -md- contextValue');
     assert.strictEqual(assetNode.commandId, 'claudeAssets.openPreview');
@@ -259,15 +259,15 @@ describe('buildTreeNodes -- project containers', () => {
   });
 
   it('project asset nodes preserve contextValue and command', () => {
-    const filePath = '/Users/braden/Projects/MyApp/.claude/skills/proj-skill/SKILL.md';
+    const filePath = '/Users/braden/Projects/MyApp/.claude/commands/proj-cmd.md';
     const assets: ClaudeAsset[] = [
-      makeAsset(AssetType.Skill, 'proj-skill', filePath, AssetScope.Project, '/Users/braden/Projects')
+      makeAsset(AssetType.Command, 'proj-cmd', filePath, AssetScope.Project, '/Users/braden/Projects')
     ];
     const nodes = buildTreeNodes(assets);
     const projContainer = getProjects(nodes)[0];
-    const skillGroup = projContainer.children[0] as GroupNodeDescriptor;
-    const assetNode = skillGroup.children[0] as AssetNodeDescriptor;
-    assert.ok(assetNode.contextValue.includes('-md-'), 'skill asset should have -md- contextValue');
+    const cmdGroup = projContainer.children[0] as GroupNodeDescriptor;
+    const assetNode = cmdGroup.children[0] as AssetNodeDescriptor;
+    assert.ok(assetNode.contextValue.includes('-md-'), 'command asset should have -md- contextValue');
     assert.strictEqual(assetNode.commandId, 'claudeAssets.openPreview');
     assert.strictEqual(assetNode.filePath, filePath);
   });
@@ -489,7 +489,7 @@ function makePluginAsset(name: string, filePath: string): ClaudeAsset {
 }
 
 function makeInstalledInfo(name: string, installPath: string, version = 'unknown', lastUpdated = '2025-06-01T00:00:00Z'): InstalledPluginInfo {
-  return { name, version, installPath, lastUpdated };
+  return { name, id: `${name}@mk`, marketplace: 'mk', version, installPath, lastUpdated };
 }
 
 function makePluginMeta(
@@ -600,9 +600,11 @@ describe('buildTreeNodes -- Plugins container has direct plugin folder children'
   });
 
   it('AC-TREE-NEW5: no duplicate assets -- cache-only scanning means each asset appears once', () => {
-    // Cache-only: scanner only yields assets from plugins/cache, no marketplace copies
-    const assets = [
-      makePluginAsset('analyzer', CACHE_ASSET_SC)   // single cache copy
+    // Cache-only: scanner only yields assets from plugins/cache, no marketplace copies.
+    // Uses a Command asset because Skills/Agents are now rendered lazily from disk.
+    const cmdPath = `${INSTALL_PATH_SC}/commands/analyzer.md`;
+    const assets: ClaudeAsset[] = [
+      { type: AssetType.Command, name: 'analyzer', filePath: cmdPath, scope: AssetScope.Plugin, description: undefined, rootPath: PLUGINS_CACHE_ROOT }
     ];
     const meta = makePluginMeta({
       'skill-creator': makeInstalledInfo('skill-creator', INSTALL_PATH_SC)
@@ -818,11 +820,12 @@ describe('buildTreeNodes -- worktree asset grouping', () => {
   });
 
   it('AC-TREE-WT-5: main and worktree assets are separated -- no duplication', () => {
-    const mainPath = '/Users/braden/Projects/Workouts/.claude/skills/foo/SKILL.md';
-    const wtPath = '/Users/braden/Projects/Workouts/.claude/worktrees/agent-ac745f103f192bf4f/.claude/skills/foo/SKILL.md';
+    // Uses Command assets (Skills/Agents now render lazily from disk and carry no descriptor children).
+    const mainPath = '/Users/braden/Projects/Workouts/.claude/commands/foo.md';
+    const wtPath = '/Users/braden/Projects/Workouts/.claude/worktrees/agent-ac745f103f192bf4f/.claude/commands/foo.md';
     const assets: ClaudeAsset[] = [
-      makeAsset(AssetType.Skill, 'foo', mainPath, AssetScope.Project, '/Users/braden/Projects'),
-      makeAsset(AssetType.Skill, 'foo', wtPath, AssetScope.Project, '/Users/braden/Projects')
+      makeAsset(AssetType.Command, 'foo', mainPath, AssetScope.Project, '/Users/braden/Projects'),
+      makeAsset(AssetType.Command, 'foo', wtPath, AssetScope.Project, '/Users/braden/Projects')
     ];
     const nodes = buildTreeNodes(assets);
     const proj = getProject(nodes, 'Workouts');
@@ -888,10 +891,10 @@ describe('buildTreeNodes -- worktree asset grouping', () => {
   });
 
   it('AC-TREE-WT-8: asset nodes inside worktree group have correct commandId and contextValue', () => {
-    const skillPath = '/Users/braden/Projects/Workouts/.claude/worktrees/wt1/.claude/skills/foo/SKILL.md';
+    const skillPath = '/Users/braden/Projects/Workouts/.claude/worktrees/wt1/.claude/commands/foo.md';
     const configPath = '/Users/braden/Projects/Workouts/.claude/worktrees/wt1/.claude/settings.json';
     const assets: ClaudeAsset[] = [
-      makeAsset(AssetType.Skill, 'foo', skillPath, AssetScope.Project, '/Users/braden/Projects'),
+      makeAsset(AssetType.Command, 'foo', skillPath, AssetScope.Project, '/Users/braden/Projects'),
       makeAsset(AssetType.Config, 'settings.json', configPath, AssetScope.Project, '/Users/braden/Projects')
     ];
     const nodes = buildTreeNodes(assets);

@@ -9,7 +9,9 @@ export enum NodeKind {
   Group = 'Group',
   Asset = 'Asset',
   WorktreesFolder = 'WorktreesFolder',
-  WorktreeNameFolder = 'WorktreeNameFolder'
+  WorktreeNameFolder = 'WorktreeNameFolder',
+  FsDir = 'FsDir',
+  FsFile = 'FsFile'
 }
 
 // ---------------------------------------------------------------------------
@@ -28,6 +30,12 @@ export interface ContainerNodeDescriptor {
    * For project: type groups + optional WorktreesFolder.
    */
   children: (ContainerNodeDescriptor | PluginFolderNodeDescriptor | AssetNodeDescriptor | GroupNodeDescriptor | WorktreesFolderNodeDescriptor)[];
+  /** Optional right-aligned text (e.g. the Plugins folder's "N Updates available" summary) */
+  description?: string;
+  /** Optional override for the TreeItem contextValue, used to gate context-menu commands */
+  contextValue?: string;
+  /** Backing real directory, when this container maps to one (plugins/, projects/) -- enables Reveal. */
+  dirPath?: string;
 }
 
 export interface WorktreesFolderNodeDescriptor {
@@ -46,6 +54,8 @@ export interface WorktreeNameFolderNodeDescriptor {
 export interface PluginFolderNodeDescriptor {
   kind: NodeKind.PluginFolder;
   pluginName: string;
+  /** Full "name@marketplace" identifier passed to `claude plugin update` (present only for installed plugins) */
+  pluginId?: string;
   label: string;
   children: GroupNodeDescriptor[];
   /** Installed version display string (present only for installed plugins) */
@@ -69,6 +79,12 @@ export interface GroupNodeDescriptor {
   assetType: AssetType;
   label: string;
   children: AssetNodeDescriptor[];
+  /**
+   * When set, the group mirrors this real directory's full contents lazily
+   * (every file and subdirectory), instead of using `children`. Used for
+   * Skills (the skills/ root) and Agents (the agents/ root).
+   */
+  dirPath?: string;
 }
 
 export interface AssetNodeDescriptor {
@@ -136,12 +152,27 @@ function buildProjectChildren(
 }
 
 /** Display labels for grouped asset types */
+// Labels match the on-disk directory names (skills/, agents/, commands/, memory/).
 const TYPE_LABELS: Partial<Record<AssetType, string>> = {
-  [AssetType.Skill]: 'Skills',
-  [AssetType.Subagent]: 'Subagents',
-  [AssetType.Command]: 'Commands',
-  [AssetType.Memory]: 'Memory'
+  [AssetType.Skill]: 'skills',
+  [AssetType.Subagent]: 'agents',
+  [AssetType.Command]: 'commands',
+  [AssetType.Memory]: 'memory'
 };
+
+/**
+ * Given an asset file path and a directory-segment name ("skills" or "agents"),
+ * return the absolute path of that segment directory (e.g. ".../skills"), or
+ * undefined when the segment is not present in the path. Uses the deepest match.
+ */
+function deriveSegmentRoot(filePath: string, segment: string): string | undefined {
+  const norm = filePath.replace(/\\/g, '/');
+  const marker = `/${segment}/`;
+  const idx = norm.lastIndexOf(marker);
+  if (idx === -1) return undefined;
+  // Keep through the segment name itself; slice off the trailing slash.
+  return filePath.slice(0, idx + marker.length - 1);
+}
 
 // ---------------------------------------------------------------------------
 // Asset node helpers
@@ -217,6 +248,24 @@ function buildTypeGroups(assets: ClaudeAsset[]): (AssetNodeDescriptor | GroupNod
     const typeAssets = byType.get(type);
     if (!typeAssets || typeAssets.length === 0) continue;
     const sorted = [...typeAssets].sort((a, b) => a.name.localeCompare(b.name));
+
+    // Skills and Agents mirror their backing directory (skills/ or agents/) so
+    // every file and subdirectory shows, not just the recognized asset files.
+    if (type === AssetType.Skill || type === AssetType.Subagent) {
+      const segment = type === AssetType.Skill ? 'skills' : 'agents';
+      const dirPath = deriveSegmentRoot(sorted[0].filePath, segment);
+      if (dirPath) {
+        result.push({
+          kind: NodeKind.Group,
+          assetType: type,
+          label: TYPE_LABELS[type]!,
+          children: [],
+          dirPath
+        });
+        continue;
+      }
+    }
+
     result.push({
       kind: NodeKind.Group,
       assetType: type,
@@ -265,8 +314,10 @@ function buildMemoryProjectsFolder(memoryAssets: ClaudeAsset[]): ContainerNodeDe
   return {
     kind: NodeKind.Container,
     containerKind: 'projects',
-    label: 'Projects',
-    children: projectFolders
+    label: 'projects',
+    children: projectFolders,
+    contextValue: 'assetProjectsRoot',
+    dirPath: deriveSegmentRoot(memoryAssets[0].filePath, 'projects')
   };
 }
 
@@ -352,10 +403,15 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
       const info = installedPlugins.get(pluginName);
       if (info) {
         const isOut = outdatedPlugins.has(pluginName);
-        const descStr = isOut ? `${info.version} - update available` : info.version;
+        // Show the source marketplace to the right of the version.
+        const source = info.marketplace ? ` · ${info.marketplace}` : '';
+        const descStr = isOut
+          ? `${info.version}${source} - update available ↓`
+          : `${info.version}${source}`;
         return {
           kind: NodeKind.PluginFolder as NodeKind.PluginFolder,
           pluginName,
+          pluginId: info.id,
           label: pluginName,
           children: pluginGroups,
           description: descStr,
@@ -372,11 +428,18 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
       };
     });
 
+    const updatableCount = pluginFolders.filter(p => p.outdated).length;
     pluginsFolderNode = {
       kind: NodeKind.Container,
       containerKind: 'plugins',
-      label: 'Plugins',
-      children: pluginFolders
+      label: 'plugins',
+      children: pluginFolders,
+      description: updatableCount > 0
+        ? `${updatableCount} Update${updatableCount === 1 ? '' : 's'} available ↓`
+        : undefined,
+      // Outdated variant gates the "Update All" command; both variants are reveal-able.
+      contextValue: updatableCount > 0 ? 'assetPluginsRootOutdated' : 'assetPluginsRoot',
+      dirPath: deriveSegmentRoot(pluginAssets[0].filePath, 'plugins')
     };
   }
 

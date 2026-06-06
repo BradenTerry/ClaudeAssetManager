@@ -70,6 +70,18 @@
         "command": "claudeAssets.revealInOS",
         "title": "Reveal in File Manager",
         "category": "Claude Assets"
+      },
+      {
+        "command": "claudeAssets.updatePlugin",
+        "title": "Update Plugin",
+        "icon": "$(arrow-circle-down)",
+        "category": "Claude Assets"
+      },
+      {
+        "command": "claudeAssets.updateAllPlugins",
+        "title": "Update All Plugins",
+        "icon": "$(arrow-circle-down)",
+        "category": "Claude Assets"
       }
     ],
     "menus": {
@@ -78,32 +90,37 @@
           "command": "claudeAssets.refresh",
           "when": "view == claudeAssets.global || view == claudeAssets.workingDirectory",
           "group": "navigation"
-        },
-        {
-          "command": "claudeAssets.addDirectory",
-          "when": "view == claudeAssets.workingDirectory",
-          "group": "navigation"
         }
       ],
       "view/item/context": [
         {
           "command": "claudeAssets.openFile",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem =~ /asset/",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config)-/ || viewItem == fsFile || viewItem == fsFileMd)",
           "group": "open"
         },
         {
           "command": "claudeAssets.openPreview",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem =~ /asset-md/",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-md-/ || viewItem == fsFileMd)",
           "group": "open"
         },
         {
           "command": "claudeAssets.revealInOS",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem =~ /asset/",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config)-/ || viewItem == fsFile || viewItem == fsFileMd || viewItem == fsDir || viewItem == assetPluginsRoot || viewItem == assetPluginsRootOutdated || viewItem == assetProjectsRoot)",
           "group": "reveal"
         },
         {
           "command": "claudeAssets.removeDirectory",
           "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem == registeredRoot",
+          "group": "manage"
+        },
+        {
+          "command": "claudeAssets.updatePlugin",
+          "when": "view == claudeAssets.global && viewItem == assetPluginFolderOutdated",
+          "group": "manage"
+        },
+        {
+          "command": "claudeAssets.updateAllPlugins",
+          "when": "view == claudeAssets.global && viewItem == assetPluginsRootOutdated",
           "group": "manage"
         }
       ]

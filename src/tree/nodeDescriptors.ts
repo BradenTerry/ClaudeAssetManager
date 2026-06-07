@@ -425,10 +425,9 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
     const buildPluginFolder = (info: InstalledPluginInfo): PluginFolderNodeDescriptor => {
       const isOut = outdatedPlugins.has(info.name);
       const enabled = enabledMap ? (enabledMap.get(info.id) !== false) : undefined;
-      // A version of "unknown" is the literal placeholder the plugin installer
-      // records when a plugin.json declares no version; render nothing rather
-      // than the noisy word.
-      let descStr = info.version && info.version !== 'unknown' ? info.version : '';
+      // version is null for plugins whose plugin.json declares none; render
+      // nothing rather than a placeholder.
+      let descStr = info.version ?? '';
       if (isOut) descStr += descStr ? ' - update available ↓' : 'update available ↓';
       if (enabled === false) descStr += descStr ? ' (disabled)' : '(disabled)';
       return {

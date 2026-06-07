@@ -31,8 +31,9 @@ export interface InstalledPluginInfo {
   id: string;
   /** Marketplace portion of the key, or "" when the key has no @ */
   marketplace: string;
-  /** Semantic version string, or "unknown" */
-  version: string;
+  /** Semantic version string, or null when unknown (field absent, or the
+   *  installer's literal "unknown" placeholder for a plugin.json with no version) */
+  version: string | null;
   /** Absolute path to the cache copy of the plugin, e.g. ~/.claude/plugins/cache/<mk>/<plugin>/<version> */
   installPath: string;
   /** ISO timestamp string from the lastUpdated field */
@@ -68,7 +69,11 @@ export function readInstalledPlugins(filePath: string): Map<string, InstalledPlu
       const marketplace = atIdx !== -1 ? key.slice(atIdx + 1) : '';
 
       const installPath = typeof entry['installPath'] === 'string' ? entry['installPath'] : '';
-      const version = typeof entry['version'] === 'string' ? entry['version'] : 'unknown';
+      // The installer writes the literal "unknown" when a plugin.json declares
+      // no version; treat that (and an absent field) as null so consumers only
+      // ever check for null, never a magic string.
+      const rawVersion = typeof entry['version'] === 'string' ? entry['version'] : '';
+      const version = rawVersion && rawVersion !== 'unknown' ? rawVersion : null;
       const lastUpdated = typeof entry['lastUpdated'] === 'string' ? entry['lastUpdated'] : '';
 
       result.set(name, { name, id: key, marketplace, version, installPath, lastUpdated });
@@ -197,15 +202,15 @@ function compareVersions(a: string, b: string): number {
 
 /**
  * Returns true only when both the installed and catalog versions are concrete
- * (present and not "unknown") and the catalog version is strictly newer.
+ * and the catalog version is strictly newer.
  *
- * Version-less plugins (installed "unknown" or no catalog version) carry no
+ * Version-less plugins (installed version null or no catalog version) carry no
  * reliable update signal, so they are never flagged -- this avoids the
  * permanent false positive that a timestamp comparison would produce.
  */
 export function isOutdated(installed: InstalledPluginInfo, catalogVersion: string | undefined): boolean {
   const iv = installed.version;
-  if (!iv || iv === 'unknown') return false;
+  if (!iv) return false;
   if (!catalogVersion || catalogVersion === 'unknown') return false;
   return compareVersions(catalogVersion, iv) > 0;
 }

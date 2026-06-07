@@ -1412,3 +1412,60 @@ describe('buildTreeNodes -- enabled-count summary (X/Y plugins enabled)', () => 
     assert.strictEqual(emptyMk!.description, '(no plugins installed)', 'empty marketplace description must be "(no plugins installed)"');
   });
 });
+
+// ---------------------------------------------------------------------------
+// AC3/AC4: project-folder descriptors inside buildMemoryProjectsFolder
+// ---------------------------------------------------------------------------
+
+describe('buildTreeNodes -- memory project folder contextValue and dirPath', () => {
+  const ROOT = '/home/user/.claude';
+  const ENCODED = '-Users-braden-Projects-MyApp';
+  const MEM_PATH = `${ROOT}/projects/${ENCODED}/memory/notes.md`;
+
+  it('AC3: project folder descriptor has contextValue "assetProjectFolder" and dirPath ending in the encoded segment', () => {
+    const assets: ClaudeAsset[] = [
+      makeAsset(AssetType.Memory, 'notes.md', MEM_PATH, AssetScope.Global, ROOT)
+    ];
+    const nodes = buildTreeNodes(assets);
+    const global = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global')!;
+    assert.ok(global, 'expected Global container');
+    const projectsFolder = global.children.find(
+      c => c.kind === NodeKind.Container && (c as ContainerNodeDescriptor).containerKind === 'projects'
+    ) as ContainerNodeDescriptor | undefined;
+    assert.ok(projectsFolder, 'expected projects folder inside Global');
+
+    const projectFolder = projectsFolder!.children[0] as ContainerNodeDescriptor;
+    assert.strictEqual(projectFolder.kind, NodeKind.Container);
+    assert.strictEqual(projectFolder.containerKind, 'project');
+    assert.strictEqual(projectFolder.contextValue, 'assetProjectFolder',
+      'project folder must have contextValue "assetProjectFolder"');
+    assert.ok(projectFolder.dirPath !== undefined, 'project folder must have a dirPath');
+    assert.ok(
+      projectFolder.dirPath!.endsWith(ENCODED),
+      `dirPath should end with encoded segment "${ENCODED}", got: "${projectFolder.dirPath}"`
+    );
+  });
+
+  it('AC4: project folder with underivable asset path still builds without throwing (dirPath may be undefined)', () => {
+    // filePath with no /.claude/projects/ marker -> deriveMemoryProjectDir returns undefined
+    const badPath = '/some/weird/path/notes.md';
+    const assets: ClaudeAsset[] = [
+      makeAsset(AssetType.Memory, 'notes.md', badPath, AssetScope.Global, ROOT)
+    ];
+    let nodes: ReturnType<typeof buildTreeNodes> | undefined;
+    assert.doesNotThrow(() => {
+      nodes = buildTreeNodes(assets);
+    }, 'buildTreeNodes must not throw when dirPath cannot be derived');
+
+    const global = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global')!;
+    const projectsFolder = global.children.find(
+      c => c.kind === NodeKind.Container && (c as ContainerNodeDescriptor).containerKind === 'projects'
+    ) as ContainerNodeDescriptor | undefined;
+    assert.ok(projectsFolder, 'expected projects folder');
+    const projectFolder = projectsFolder!.children[0] as ContainerNodeDescriptor;
+    assert.strictEqual(projectFolder.contextValue, 'assetProjectFolder',
+      'contextValue must be set even when dirPath is undefined');
+    // dirPath may be undefined; no crash is the assertion
+    assert.strictEqual(projectFolder.dirPath, undefined, 'dirPath should be undefined when path has no projects marker');
+  });
+});

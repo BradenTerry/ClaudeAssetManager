@@ -1,5 +1,5 @@
 import * as assert from 'assert';
-import { derivePluginName, deriveProjectName, deriveProjectInfo } from '../../src/core/containerDerivations';
+import { derivePluginName, deriveProjectName, deriveProjectInfo, deriveMemoryProjectDir } from '../../src/core/containerDerivations';
 import { AssetType, AssetScope, ClaudeAsset } from '../../src/core/types';
 
 function makeAsset(
@@ -201,5 +201,45 @@ describe('deriveProjectInfo -- project + worktree extraction', () => {
       '/Users/braden/Projects'
     );
     assert.strictEqual(deriveProjectName(asset), 'Workouts');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deriveMemoryProjectDir
+// ---------------------------------------------------------------------------
+
+describe('deriveMemoryProjectDir -- derive encoded project directory from memory asset path', () => {
+  it('AC1: standard path returns the encoded project directory', () => {
+    assert.strictEqual(
+      deriveMemoryProjectDir('/x/.claude/projects/-Users-a-Projects-Foo/memory/bar.md'),
+      '/x/.claude/projects/-Users-a-Projects-Foo'
+    );
+  });
+
+  it('AC2: path with no /.claude/projects/ segment returns undefined', () => {
+    assert.strictEqual(
+      deriveMemoryProjectDir('/Users/braden/.claude/skills/foo/SKILL.md'),
+      undefined
+    );
+  });
+
+  it('returns undefined for empty string', () => {
+    assert.strictEqual(deriveMemoryProjectDir(''), undefined);
+  });
+
+  it('returns undefined when encoded segment is absent (marker at end)', () => {
+    assert.strictEqual(
+      deriveMemoryProjectDir('/home/user/.claude/projects/'),
+      undefined
+    );
+  });
+
+  it('preserves native path separators in the returned slice', () => {
+    // Normalized copy is used for finding the marker; original is sliced.
+    const input = '/home/user/.claude/projects/-Users-braden-Projects-Sitelume/memory/notes.md';
+    assert.strictEqual(
+      deriveMemoryProjectDir(input),
+      '/home/user/.claude/projects/-Users-braden-Projects-Sitelume'
+    );
   });
 });

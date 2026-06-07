@@ -7,6 +7,8 @@ import { scan } from './core/scanner';
 import { buildScanRoots } from './core/scanRoots';
 import { readInstalledPlugins, readCatalogVersions, readCatalogPlugins, isOutdated, readEnabledPlugins, readKnownMarketplaces, InstalledPluginInfo } from './core/pluginMetadata';
 import { isValidPluginId, isValidMarketplaceName, isSafeMarketplaceSource } from './core/pluginValidation';
+import { buildMarketplacePluginRows, pageMarketplaceRows } from './core/marketplacePluginView';
+import { openPluginManager, PluginManagerDeps } from './webview/pluginManager';
 import { AssetTreeProvider } from './tree/assetTreeProvider';
 import { AssetNode, PluginFolderNode, ContainerNode } from './tree/nodes';
 import { watchRoots } from './services/watcher';
@@ -62,7 +64,7 @@ export function activate(context: vscode.ExtensionContext): void {
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: 'Claude Assets: updating plugins',
+        title: 'Updating plugins',
         cancellable: false
       },
       async progress => {
@@ -91,7 +93,7 @@ export function activate(context: vscode.ExtensionContext): void {
   /** Confirm, run updates, report results, then re-scan. */
   async function performUpdates(ids: string[], confirmDetail: string): Promise<void> {
     if (ids.length === 0) {
-      vscode.window.showInformationMessage('Claude Assets: no plugin updates available.');
+      vscode.window.showInformationMessage('No plugin updates available.');
       return;
     }
     const confirm = await vscode.window.showWarningMessage(
@@ -106,11 +108,11 @@ export function activate(context: vscode.ExtensionContext): void {
     await runScan();
     if (failed.length === 0) {
       vscode.window.showInformationMessage(
-        `Claude Assets: updated ${ids.length} plugin${ids.length === 1 ? '' : 's'}. Restart your Claude Code session to apply.`
+        `Updated ${ids.length} plugin${ids.length === 1 ? '' : 's'}. Restart your Claude Code session to apply.`
       );
     } else {
       const names = failed.map(f => f.id).join(', ');
-      vscode.window.showErrorMessage(`Claude Assets: failed to update ${names}. ${failed[0].output}`);
+      vscode.window.showErrorMessage(`Failed to update ${names}. ${failed[0].output}`);
     }
   }
 
@@ -189,6 +191,105 @@ export function activate(context: vscode.ExtensionContext): void {
   }
   updateWorkingDirTitle();
 
+  const PLUGIN_PAGE_SIZE = 50;
+
+  // Plugin Manager deps -- closed over activate() locals.
+  const pluginManagerDeps: PluginManagerDeps = {
+    getData(selected: string, page: number, query: string) {
+      const installedPath = path.join(homeClaudeDir, 'plugins', 'installed_plugins.json');
+      const catalogPath = path.join(homeClaudeDir, 'plugins', 'plugin-catalog-cache.json');
+      const settingsPath = path.join(homeClaudeDir, 'settings.json');
+      const mkPath = path.join(homeClaudeDir, 'plugins', 'known_marketplaces.json');
+
+      const installedMap = readInstalledPlugins(installedPath);
+      const catalogArr = readCatalogPlugins(catalogPath);
+      const enabledMap = readEnabledPlugins(settingsPath);
+      const catalogVersionsMap = readCatalogVersions(catalogPath);
+      const knownMk = readKnownMarketplaces(mkPath);
+
+      // Build marketplace option list: sorted known marketplaces + local if any installed plugin has mk="".
+      const mkNames = [...knownMk.keys()].sort((a, b) => a.localeCompare(b));
+      const marketplaces: { value: string; label: string }[] = mkNames.map(n => ({ value: n, label: n }));
+      const hasLocal = [...installedMap.values()].some(i => i.marketplace === '');
+      if (hasLocal) {
+        marketplaces.unshift({ value: '', label: '(local)' });
+      }
+
+      // Determine effective selected.
+      const validValues = new Set(marketplaces.map(m => m.value));
+      let effectiveSelected: string;
+      if (validValues.has(selected)) {
+        effectiveSelected = selected;
+      } else if (marketplaces.length > 0) {
+        effectiveSelected = marketplaces[0].value;
+      } else {
+        effectiveSelected = '';
+      }
+
+      const allRows = buildMarketplacePluginRows(effectiveSelected, installedMap, catalogArr, enabledMap, catalogVersionsMap);
+      const paged = pageMarketplaceRows(allRows, { page, pageSize: PLUGIN_PAGE_SIZE, query });
+      return {
+        marketplaces,
+        selected: effectiveSelected,
+        rows: paged.rows,
+        page: paged.page,
+        pageCount: paged.pageCount,
+        totalCount: paged.totalCount,
+        query
+      };
+    },
+
+    async install(id: string) {
+      const result = await runClaude(['plugin', 'install', id], `Installing ${id}`);
+      await runScan();
+      if (!result.ok) {
+        vscode.window.showErrorMessage(`Failed to install ${id}. ${result.output || 'unknown error'}`);
+      }
+    },
+
+    async uninstall(id: string) {
+      // Extract name (part before @) for display.
+      const name = id.includes('@') ? id.slice(0, id.indexOf('@')) : id;
+      const confirm = await vscode.window.showWarningMessage(
+        `Uninstall plugin "${name}"?`,
+        { modal: true, detail: `This runs: claude plugin uninstall ${id}` },
+        'Uninstall'
+      );
+      if (confirm !== 'Uninstall') return;
+      const result = await runClaude(['plugin', 'uninstall', id], `Uninstalling ${name}`);
+      await runScan();
+      if (result.ok) {
+        vscode.window.showInformationMessage(`Uninstalled ${name}. Restart your Claude Code session to apply.`);
+      } else {
+        vscode.window.showErrorMessage(`Failed to uninstall ${name}. ${result.output || 'unknown error'}`);
+      }
+    },
+
+    async enable(id: string) {
+      const result = await runClaude(['plugin', 'enable', id], `Enabling ${id}`);
+      await runScan();
+      if (!result.ok) {
+        vscode.window.showErrorMessage(`Failed to enable ${id}. ${result.output || 'unknown error'}`);
+      }
+    },
+
+    async disable(id: string) {
+      const result = await runClaude(['plugin', 'disable', id], `Disabling ${id}`);
+      await runScan();
+      if (!result.ok) {
+        vscode.window.showErrorMessage(`Failed to disable ${id}. ${result.output || 'unknown error'}`);
+      }
+    },
+
+    async addMarketplace() {
+      await vscode.commands.executeCommand('claudeAssets.addMarketplace');
+    },
+
+    async removeMarketplace(marketplace: string) {
+      await vscode.commands.executeCommand('claudeAssets.removeMarketplace', { label: marketplace });
+    }
+  };
+
   // Commands
   context.subscriptions.push(
     globalView,
@@ -197,7 +298,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand('claudeAssets.refresh', () => {
       runScan().catch(err => {
-        vscode.window.showErrorMessage(`Claude Assets: scan failed: ${err}`);
+        vscode.window.showErrorMessage(`Scan failed: ${err}`);
       });
     }),
 
@@ -277,7 +378,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('claudeAssets.updatePlugin', async (node?: PluginFolderNode) => {
       const id = node?.pluginId;
       if (!id) {
-        vscode.window.showErrorMessage('Claude Assets: could not determine which plugin to update.');
+        vscode.window.showErrorMessage('Could not determine which plugin to update.');
         return;
       }
       await performUpdates([id], `This runs: claude plugin update ${id}`);
@@ -291,7 +392,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('claudeAssets.updateMarketplacePlugins', async (node?: ContainerNode) => {
       const mk = typeof node?.label === 'string' ? node.label : undefined;
       if (!mk) {
-        vscode.window.showErrorMessage('Claude Assets: could not determine which marketplace to update.');
+        vscode.window.showErrorMessage('Could not determine which marketplace to update.');
         return;
       }
       const ids = outdatedPlugins.filter(p => (p.marketplace || '(local)') === mk).map(p => p.id);
@@ -301,11 +402,11 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('claudeAssets.uninstallPlugin', async (node?: PluginFolderNode) => {
       const id = node?.pluginId ?? node?.pluginName;
       if (!id) {
-        vscode.window.showErrorMessage('Claude Assets: could not determine which plugin to uninstall.');
+        vscode.window.showErrorMessage('Could not determine which plugin to uninstall.');
         return;
       }
       if (!isValidPluginId(id)) {
-        vscode.window.showErrorMessage(`Claude Assets: invalid plugin id "${id}".`);
+        vscode.window.showErrorMessage(`Invalid plugin id "${id}".`);
         return;
       }
       const name = node?.pluginName ?? id;
@@ -320,7 +421,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const result = await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
-          title: `Claude Assets: uninstalling ${name}`,
+          title: `Uninstalling ${name}`,
           cancellable: false
         },
         () => new Promise<{ ok: boolean; output: string }>(resolve => {
@@ -333,11 +434,11 @@ export function activate(context: vscode.ExtensionContext): void {
       await runScan();
       if (result.ok) {
         vscode.window.showInformationMessage(
-          `Claude Assets: uninstalled ${name}. Restart your Claude Code session to apply.`
+          `Uninstalled ${name}. Restart your Claude Code session to apply.`
         );
       } else {
         vscode.window.showErrorMessage(
-          `Claude Assets: failed to uninstall ${name}. ${result.output || 'unknown error'}`
+          `Failed to uninstall ${name}. ${result.output || 'unknown error'}`
         );
       }
     }),
@@ -414,18 +515,18 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('claudeAssets.enablePlugin', async (node?: PluginFolderNode) => {
       const id = node?.pluginId;
       if (!id || !isValidPluginId(id)) {
-        vscode.window.showErrorMessage('Claude Assets: could not determine a valid plugin id to enable.');
+        vscode.window.showErrorMessage('Could not determine a valid plugin id to enable.');
         return;
       }
-      const result = await runClaude(['plugin', 'enable', id], `Claude Assets: enabling ${id}`);
+      const result = await runClaude(['plugin', 'enable', id], `Enabling ${id}`);
       await runScan();
       if (result.ok) {
         vscode.window.showInformationMessage(
-          `Claude Assets: enabled ${id}. Restart your Claude Code session to apply.`
+          `Enabled ${id}. Restart your Claude Code session to apply.`
         );
       } else {
         vscode.window.showErrorMessage(
-          `Claude Assets: failed to enable ${id}. ${result.output || 'unknown error'}`
+          `Failed to enable ${id}. ${result.output || 'unknown error'}`
         );
       }
     }),
@@ -433,18 +534,18 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('claudeAssets.disablePlugin', async (node?: PluginFolderNode) => {
       const id = node?.pluginId;
       if (!id || !isValidPluginId(id)) {
-        vscode.window.showErrorMessage('Claude Assets: could not determine a valid plugin id to disable.');
+        vscode.window.showErrorMessage('Could not determine a valid plugin id to disable.');
         return;
       }
-      const result = await runClaude(['plugin', 'disable', id], `Claude Assets: disabling ${id}`);
+      const result = await runClaude(['plugin', 'disable', id], `Disabling ${id}`);
       await runScan();
       if (result.ok) {
         vscode.window.showInformationMessage(
-          `Claude Assets: disabled ${id}. Restart your Claude Code session to apply.`
+          `Disabled ${id}. Restart your Claude Code session to apply.`
         );
       } else {
         vscode.window.showErrorMessage(
-          `Claude Assets: failed to disable ${id}. ${result.output || 'unknown error'}`
+          `Failed to disable ${id}. ${result.output || 'unknown error'}`
         );
       }
     }),
@@ -457,19 +558,19 @@ export function activate(context: vscode.ExtensionContext): void {
       });
       if (!src) return;
       if (!isSafeMarketplaceSource(src)) {
-        vscode.window.showErrorMessage('Claude Assets: invalid marketplace source -- contains unsafe characters.');
+        vscode.window.showErrorMessage('Invalid marketplace source -- contains unsafe characters.');
         return;
       }
       const result = await runClaude(
         ['plugin', 'marketplace', 'add', src.trim()],
-        `Claude Assets: adding marketplace ${src.trim()}`
+        `Adding marketplace ${src.trim()}`
       );
       await runScan();
       if (result.ok) {
-        vscode.window.showInformationMessage(`Claude Assets: added marketplace ${src.trim()}.`);
+        vscode.window.showInformationMessage(`Added marketplace ${src.trim()}.`);
       } else {
         vscode.window.showErrorMessage(
-          `Claude Assets: failed to add marketplace. ${result.output || 'unknown error'}`
+          `Failed to add marketplace. ${result.output || 'unknown error'}`
         );
       }
     }),
@@ -477,7 +578,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('claudeAssets.removeMarketplace', async (node?: ContainerNode) => {
       const name = typeof node?.label === 'string' ? node.label : undefined;
       if (!name || !isValidMarketplaceName(name)) {
-        vscode.window.showErrorMessage('Claude Assets: could not determine a valid marketplace name to remove.');
+        vscode.window.showErrorMessage('Could not determine a valid marketplace name to remove.');
         return;
       }
       const confirm = await vscode.window.showWarningMessage(
@@ -488,14 +589,14 @@ export function activate(context: vscode.ExtensionContext): void {
       if (confirm !== 'Remove') return;
       const result = await runClaude(
         ['plugin', 'marketplace', 'remove', name],
-        `Claude Assets: removing marketplace ${name}`
+        `Removing marketplace ${name}`
       );
       await runScan();
       if (result.ok) {
-        vscode.window.showInformationMessage(`Claude Assets: removed marketplace ${name}.`);
+        vscode.window.showInformationMessage(`Removed marketplace ${name}.`);
       } else {
         vscode.window.showErrorMessage(
-          `Claude Assets: failed to remove marketplace ${name}. ${result.output || 'unknown error'}`
+          `Failed to remove marketplace ${name}. ${result.output || 'unknown error'}`
         );
       }
     }),
@@ -503,67 +604,32 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('claudeAssets.refreshMarketplace', async (node?: ContainerNode) => {
       const name = typeof node?.label === 'string' ? node.label : undefined;
       if (!name || !isValidMarketplaceName(name)) {
-        vscode.window.showErrorMessage('Claude Assets: could not determine a valid marketplace name to refresh.');
+        vscode.window.showErrorMessage('Could not determine a valid marketplace name to refresh.');
         return;
       }
       const result = await runClaude(
         ['plugin', 'marketplace', 'update', name],
-        `Claude Assets: refreshing ${name}`
+        `Refreshing ${name}`
       );
       await runScan();
       if (result.ok) {
-        vscode.window.showInformationMessage(`Claude Assets: refreshed source for ${name}.`);
+        vscode.window.showInformationMessage(`Refreshed source for ${name}.`);
       } else {
         vscode.window.showErrorMessage(
-          `Claude Assets: failed to refresh marketplace ${name}. ${result.output || 'unknown error'}`
+          `Failed to refresh marketplace ${name}. ${result.output || 'unknown error'}`
         );
       }
     }),
 
-    vscode.commands.registerCommand('claudeAssets.browseMarketplace', async (node?: ContainerNode) => {
-      const mk = typeof node?.label === 'string' ? node.label : undefined;
-      if (!mk || !isValidMarketplaceName(mk)) {
-        vscode.window.showErrorMessage('Claude Assets: could not determine a valid marketplace name to browse.');
-        return;
+    vscode.commands.registerCommand('claudeAssets.openPluginManager', (node?: { label?: unknown }) => {
+      const rawLabel = typeof node?.label === 'string' ? node.label : undefined;
+      let preselect: string | undefined;
+      if (rawLabel === '(local)') {
+        preselect = '';
+      } else if (rawLabel !== undefined && isValidMarketplaceName(rawLabel)) {
+        preselect = rawLabel;
       }
-      const catalogPath = path.join(homeClaudeDir, 'plugins', 'plugin-catalog-cache.json');
-      const installedPath = path.join(homeClaudeDir, 'plugins', 'installed_plugins.json');
-      const installed = readInstalledPlugins(installedPath);
-      const installedIds = new Set([...installed.values()].map(i => i.id));
-      const available = readCatalogPlugins(catalogPath)
-        .filter(p => p.marketplace === mk && !installedIds.has(p.id))
-        .sort((a, b) => a.name.localeCompare(b.name));
-      if (available.length === 0) {
-        vscode.window.showInformationMessage(
-          `Claude Assets: no new plugins available in ${mk}. (Try Refresh Source to update the catalog.)`
-        );
-        return;
-      }
-      const picks = await vscode.window.showQuickPick(
-        available.map(p => ({ label: p.name, description: p.version, detail: p.description, id: p.id })),
-        { canPickMany: true, title: `Add plugins from ${mk}`, placeHolder: 'Select plugins to install' }
-      );
-      if (!picks || picks.length === 0) return;
-      const ids = picks.map(p => p.id).filter(isValidPluginId);
-      const failed: { id: string; output: string }[] = [];
-      for (const id of ids) {
-        const r = await runClaude(['plugin', 'install', id], `Claude Assets: installing ${id}`);
-        if (!r.ok) {
-          failed.push({ id, output: r.output || 'unknown error' });
-        }
-      }
-      await runScan();
-      const installed2 = ids.length - failed.length;
-      if (failed.length === 0) {
-        vscode.window.showInformationMessage(
-          `Claude Assets: installed ${installed2} plugin${installed2 === 1 ? '' : 's'} from ${mk}. Restart your Claude Code session to apply.`
-        );
-      } else {
-        const names = failed.map(f => f.id).join(', ');
-        vscode.window.showErrorMessage(
-          `Claude Assets: failed to install ${names}. ${failed[0].output}`
-        );
-      }
+      openPluginManager(context, pluginManagerDeps, preselect);
     }),
 
     // Re-scan on configuration change
@@ -576,7 +642,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Initial scan
   runScan().catch(err => {
-    vscode.window.showErrorMessage(`Claude Assets: initial scan failed: ${err}`);
+    vscode.window.showErrorMessage(`Initial scan failed: ${err}`);
   });
 }
 

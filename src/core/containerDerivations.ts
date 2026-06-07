@@ -148,6 +148,31 @@ export function isRootLevelAsset(asset: ClaudeAsset): boolean {
 }
 
 /**
+ * For a memory asset under ~/.claude/projects/<encoded>/memory/..., return the
+ * absolute path of the encoded project directory (e.g. ~/.claude/projects/<encoded>).
+ *
+ * Normalizes backslashes only to locate the marker, then slices the ORIGINAL filePath
+ * so native separators are preserved. Returns undefined when the marker or the encoded
+ * segment after it is absent.
+ */
+export function deriveMemoryProjectDir(filePath: string): string | undefined {
+  const norm = filePath.replace(/\\/g, '/');
+  const marker = '/.claude/projects/';
+  const i = norm.indexOf(marker);
+  if (i === -1) {
+    return undefined;
+  }
+  const afterMarker = norm.slice(i + marker.length);
+  const seg = afterMarker.split('/')[0];
+  if (!seg) {
+    return undefined;
+  }
+  // cut = index in norm just after the encoded segment
+  const cut = i + marker.length + seg.length;
+  return filePath.slice(0, cut);
+}
+
+/**
  * For a memory asset under ~/.claude/projects/<encoded>/memory/..., return a readable
  * label for the originating project. The <encoded> segment is the project's working
  * directory with "/" replaced by "-" (lossy, so decoding is best-effort).

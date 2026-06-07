@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { AssetType, AssetScope, ClaudeAsset } from '../core/types';
 import { InstalledPluginInfo, MarketplaceInfo } from '../core/pluginMetadata';
-import { derivePluginName, deriveProjectInfo, deriveMemoryProject, isRootLevelAsset } from '../core/containerDerivations';
+import { derivePluginName, deriveProjectInfo, deriveMemoryProject, deriveMemoryProjectDir, isRootLevelAsset } from '../core/containerDerivations';
 
 export enum NodeKind {
   Container = 'Container',
@@ -316,7 +316,9 @@ function buildMemoryProjectsFolder(memoryAssets: ClaudeAsset[]): ContainerNodeDe
         kind: NodeKind.Container as NodeKind.Container,
         containerKind: 'project' as const,
         label: proj,
-        children: pAssets.map(buildAssetNode)
+        children: pAssets.map(buildAssetNode),
+        contextValue: 'assetProjectFolder',
+        dirPath: deriveMemoryProjectDir(pAssets[0].filePath)
       };
     });
 

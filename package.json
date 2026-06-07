@@ -151,9 +151,9 @@
         "category": "Claude Asset Manager"
       },
       {
-        "command": "claudeAssets.browseMarketplace",
-        "title": "Add Plugin",
-        "icon": "$(add)",
+        "command": "claudeAssets.openPluginManager",
+        "title": "Manage Plugins",
+        "icon": "$(gear)",
         "category": "Claude Asset Manager"
       }
     ],
@@ -178,7 +178,7 @@
         },
         {
           "command": "claudeAssets.revealInOS",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config)-/ || viewItem =~ /^fs(Dir|File)/ || viewItem == assetPluginsRoot || viewItem == assetPluginsRootOutdated || viewItem == assetProjectsRoot || viewItem == assetMarketplace || viewItem == assetMarketplaceOutdated)",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config)-/ || viewItem =~ /^fs(Dir|File)/ || viewItem == assetPluginsRoot || viewItem == assetPluginsRootOutdated || viewItem == assetProjectsRoot || viewItem == assetProjectFolder || viewItem == assetMarketplace || viewItem == assetMarketplaceOutdated)",
           "group": "reveal"
         },
         {
@@ -212,12 +212,17 @@
           "group": "manage"
         },
         {
-          "command": "claudeAssets.browseMarketplace",
-          "when": "view == claudeAssets.global && viewItem =~ /^assetMarketplace/",
+          "command": "claudeAssets.openPluginManager",
+          "when": "view == claudeAssets.global && viewItem =~ /^assetPluginsRoot/",
           "group": "inline"
         },
         {
-          "command": "claudeAssets.browseMarketplace",
+          "command": "claudeAssets.openPluginManager",
+          "when": "view == claudeAssets.global && viewItem =~ /^assetPluginsRoot/",
+          "group": "manage"
+        },
+        {
+          "command": "claudeAssets.openPluginManager",
           "when": "view == claudeAssets.global && viewItem =~ /^assetMarketplace/",
           "group": "manage"
         },
@@ -243,7 +248,7 @@
         },
         {
           "command": "claudeAssets.deleteFile",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config)-(global|project|registered)/ || viewItem == fsFile || viewItem == fsFileMd || viewItem == fsDir)",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config)-(global|project|registered)/ || viewItem == fsFile || viewItem == fsFileMd || viewItem == fsDir || viewItem == assetProjectFolder)",
           "group": "zzz_delete"
         }
       ]

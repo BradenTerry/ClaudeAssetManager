@@ -47,7 +47,8 @@ Your machine-wide `~/.claude` assets:
 
 - **Click** any file to open it (markdown opens in the rendered preview; config opens in the editor).
 - **Right-click** a file for **Open File**, **Open Preview**, **Reveal in File Manager**, and **Delete**.
-- **Right-click** a folder for **Reveal in File Manager** and **Delete** (non-plugin folders).
+- **Right-click** a folder for **Reveal in File Manager** and **Delete**, including the per-project
+  folders under **Projects**. Plugin folders are managed by Claude and cannot be deleted here.
 - **Delete** moves the item to the system trash and asks for confirmation first.
 
 ### Managing plugins
@@ -55,13 +56,20 @@ Your machine-wide `~/.claude` assets:
 Plugin actions shell out to the Claude Code CLI and require `claude` on your `PATH`. After any
 change, restart your Claude Code session to apply it.
 
+- **Manage Plugins**: click the gear icon on the **Plugins** folder, or right-click the **Plugins**
+  folder or a marketplace, to open a graphical panel. It searches a marketplace's catalog and
+  installs, uninstalls, enables, or disables plugins (paged 50 at a time), and can add or remove a
+  marketplace. Right-clicking a marketplace opens the panel scoped to it.
+- **Enable Plugin** / **Disable Plugin**: right-click a plugin to toggle it.
 - **Update Plugin**: right-click an out-of-date plugin.
 - **Update Plugins**: right-click a marketplace folder to update every out-of-date plugin from it.
 - **Update All Plugins**: right-click the **Plugins** folder.
 - **Uninstall Plugin**: right-click a plugin.
+- **Add Marketplace** / **Remove Marketplace** / **Refresh Source**: right-click the **Plugins**
+  folder or a marketplace.
 
-Each action confirms before running and shows the exact command it will execute. Files inside a
-plugin cannot be deleted individually; uninstall the plugin instead.
+Each action confirms before running where it is destructive and shows the exact command it will
+execute. Files inside a plugin cannot be deleted individually; uninstall the plugin instead.
 
 ### Refresh
 

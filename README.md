@@ -55,7 +55,8 @@ Your machine-wide `~/.claude` assets:
 
 - **Click** any file to open it (markdown opens in the rendered preview; config opens in the editor).
 - **Right-click** a file for **Open File**, **Open Preview**, **Reveal in File Manager**, and **Delete**.
-- **Right-click** a folder for **Reveal in File Manager** and **Delete** (non-plugin folders).
+- **Right-click** a folder for **Reveal in File Manager** and **Delete**, including the per-project
+  folders under **Projects**. Plugin folders are managed by Claude and cannot be deleted here.
 - **Delete** moves the item to the system trash and asks for confirmation first.
 
 ### Managing plugins
@@ -63,15 +64,25 @@ Your machine-wide `~/.claude` assets:
 Plugin actions shell out to the Claude Code CLI and require `claude` on your `PATH`. After any
 change, restart your Claude Code session to apply it.
 
-- **Enable Plugin** / **Disable Plugin**: right-click a plugin to toggle it (runs
-  `claude plugin enable|disable <id>`). The menu shows whichever action applies to the current state.
+**Manage Plugins** opens a graphical panel: click the gear icon on the **Plugins** folder, or
+right-click the **Plugins** folder (or any marketplace) and choose **Manage Plugins**. The panel
+lets you:
+
+- Pick a marketplace from a dropdown, or **Add Marketplace** / **Remove Marketplace** without
+  leaving the panel. Right-clicking a specific marketplace opens the panel scoped to it.
+- **Search** the selected marketplace's plugins by name or description.
+- **Install**, **Uninstall**, **Enable**, or **Disable** any plugin, with an `Update available`
+  badge on out-of-date ones.
+- Page through large catalogs 50 plugins at a time.
+
+The same actions are also available straight from the tree by right-clicking a node:
+
+- **Enable Plugin** / **Disable Plugin**: toggle a plugin (runs `claude plugin enable|disable <id>`).
+  The menu shows whichever action applies to the current state.
 - **Update Plugin**: right-click an out-of-date plugin.
 - **Update Plugins**: right-click a marketplace folder to update every out-of-date plugin from it.
 - **Update All Plugins**: right-click the **Plugins** folder.
 - **Uninstall Plugin**: right-click a plugin.
-- **Add Plugin**: click the inline `+` (or right-click) on a marketplace folder to browse every
-  plugin available from that source that you have not installed, pick one or more, and install them
-  (runs `claude plugin install <name@marketplace>`).
 - **Add Marketplace**: right-click the **Plugins** folder and enter a GitHub repo, URL, or path
   (runs `claude plugin marketplace add <source>`).
 - **Refresh Source**: right-click a marketplace folder to pull the latest from its source

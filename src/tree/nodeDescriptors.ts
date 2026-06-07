@@ -425,9 +425,11 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
     const buildPluginFolder = (info: InstalledPluginInfo): PluginFolderNodeDescriptor => {
       const isOut = outdatedPlugins.has(info.name);
       const enabled = enabledMap ? (enabledMap.get(info.id) !== false) : undefined;
-      let descStr = info.version;
-      if (isOut) descStr += ' - update available ↓';
-      if (enabled === false) descStr += ' (disabled)';
+      // version is null for plugins whose plugin.json declares none; render
+      // nothing rather than a placeholder.
+      let descStr = info.version ?? '';
+      if (isOut) descStr += descStr ? ' - update available ↓' : 'update available ↓';
+      if (enabled === false) descStr += descStr ? ' (disabled)' : '(disabled)';
       return {
         kind: NodeKind.PluginFolder as NodeKind.PluginFolder,
         pluginName: info.name,

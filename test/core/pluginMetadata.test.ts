@@ -44,7 +44,7 @@ describe('readInstalledPlugins', () => {
 
       const info = result.get('skill-creator')!;
       assert.strictEqual(info.name, 'skill-creator');
-      assert.strictEqual(info.version, 'unknown');
+      assert.strictEqual(info.version, null, 'literal "unknown" normalizes to null');
       assert.strictEqual(info.installPath, '/abs/cache/mk/skill-creator/unknown');
       assert.strictEqual(info.lastUpdated, '2025-06-01T00:00:00Z');
     } finally {
@@ -293,7 +293,7 @@ describe('readCatalogVersions', () => {
 // ---------------------------------------------------------------------------
 
 describe('isOutdated', () => {
-  function makeInfo(version: string): InstalledPluginInfo {
+  function makeInfo(version: string | null): InstalledPluginInfo {
     return {
       name: 'test-plugin',
       id: 'test-plugin@mk',
@@ -318,8 +318,8 @@ describe('isOutdated', () => {
     assert.strictEqual(isOutdated(makeInfo('2.0.0'), '1.5.0'), false);
   });
 
-  it('AC-PM9: returns false when installed version is "unknown"', () => {
-    assert.strictEqual(isOutdated(makeInfo('unknown'), '1.0.0'), false);
+  it('AC-PM9: returns false when installed version is null (unknown)', () => {
+    assert.strictEqual(isOutdated(makeInfo(null), '1.0.0'), false);
   });
 
   it('AC-PM9b: returns false when catalog version is undefined', () => {

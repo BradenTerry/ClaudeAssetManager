@@ -488,7 +488,7 @@ function makePluginAsset(name: string, filePath: string): ClaudeAsset {
   };
 }
 
-function makeInstalledInfo(name: string, installPath: string, version = 'unknown', lastUpdated = '2025-06-01T00:00:00Z'): InstalledPluginInfo {
+function makeInstalledInfo(name: string, installPath: string, version: string | null = null, lastUpdated = '2025-06-01T00:00:00Z'): InstalledPluginInfo {
   return { name, id: `${name}@mk`, marketplace: 'mk', version, installPath, lastUpdated };
 }
 
@@ -560,12 +560,12 @@ describe('buildTreeNodes -- Plugins container (metadata-driven, nested by market
     assert.strictEqual(folders[1].pluginName, 'skill-creator');
   });
 
-  it('AC-TREE-NEW3: installed plugin folder has version description', () => {
-    const meta = makePluginMeta({ 'skill-creator': makeInstalledInfo('skill-creator', INSTALL_PATH_SC, 'unknown') });
+  it('AC-TREE-NEW3: installed plugin with unknown version shows no version text', () => {
+    const meta = makePluginMeta({ 'skill-creator': makeInstalledInfo('skill-creator', INSTALL_PATH_SC, null) });
     const nodes = buildTreeNodes([], meta);
     const scFolder = getPluginFolders(nodes).find(f => f.pluginName === 'skill-creator')!;
     assert.ok(scFolder, 'skill-creator folder should exist');
-    assert.ok(scFolder.description && scFolder.description.includes('unknown'), `description should include version. Got: "${scFolder.description}"`);
+    assert.strictEqual(scFolder.description, '', `unknown version should render no description. Got: "${scFolder.description}"`);
   });
 
   it('AC-TREE-NEW3b: installed plugin with version 1.0.0 shows that version in description', () => {
@@ -585,7 +585,7 @@ describe('buildTreeNodes -- Plugins container (metadata-driven, nested by market
   });
 
   it('AC-TREE-NEW4: outdated plugin description includes "update available" and outdated flag is true', () => {
-    const meta = makePluginMeta({ 'skill-creator': makeInstalledInfo('skill-creator', INSTALL_PATH_SC, 'unknown') }, ['skill-creator']);
+    const meta = makePluginMeta({ 'skill-creator': makeInstalledInfo('skill-creator', INSTALL_PATH_SC, null) }, ['skill-creator']);
     const nodes = buildTreeNodes([], meta);
     const scFolder = getPluginFolders(nodes).find(f => f.pluginName === 'skill-creator')!;
     assert.ok(scFolder.description!.includes('update available'), `Got: "${scFolder.description}"`);

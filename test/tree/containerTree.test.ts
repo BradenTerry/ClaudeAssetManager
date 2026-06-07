@@ -560,12 +560,12 @@ describe('buildTreeNodes -- Plugins container (metadata-driven, nested by market
     assert.strictEqual(folders[1].pluginName, 'skill-creator');
   });
 
-  it('AC-TREE-NEW3: installed plugin folder has version description', () => {
+  it('AC-TREE-NEW3: installed plugin with unknown version shows no version text', () => {
     const meta = makePluginMeta({ 'skill-creator': makeInstalledInfo('skill-creator', INSTALL_PATH_SC, 'unknown') });
     const nodes = buildTreeNodes([], meta);
     const scFolder = getPluginFolders(nodes).find(f => f.pluginName === 'skill-creator')!;
     assert.ok(scFolder, 'skill-creator folder should exist');
-    assert.ok(scFolder.description && scFolder.description.includes('unknown'), `description should include version. Got: "${scFolder.description}"`);
+    assert.strictEqual(scFolder.description, '', `unknown version should render no description. Got: "${scFolder.description}"`);
   });
 
   it('AC-TREE-NEW3b: installed plugin with version 1.0.0 shows that version in description', () => {

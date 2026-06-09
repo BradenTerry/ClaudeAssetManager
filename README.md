@@ -23,6 +23,16 @@ applies to your current workspace:
   at the top.
 - One folder per sub-project, each with its own CLAUDE.md, config, and asset groups.
 - Git worktrees grouped under a **Worktrees** folder so they do not duplicate a project's assets.
+- A **Plugins** folder (last child) listing the plugins installed at project or local scope,
+  grouped under their source marketplace just like **Global** (which shows your machine-wide,
+  user-scope installs). Each plugin shows its effective enabled/disabled state inline
+  (` · enabled` / ` · disabled`), resolved as `local ?? team ?? enabled` (your
+  `.claude/settings.local.json` override wins over the team-shared `.claude/settings.json`,
+  default enabled). Hover a plugin for the per-scope breakdown: **Team (project)**, **Just me
+  (local)**, and **Effective**. The folder shows an `X/Y plugins enabled` summary counting the
+  effective state, and appears whenever the open folder has a `.claude` directory, even with
+  nothing installed yet (shown as `(no plugins installed)`), so you can open **Manage Plugins**
+  to add the first one.
 
 In other words, the whole set of skills, agents, commands, memory, and config Claude can pull
 into a session for the directory you are working in, laid out in one place.
@@ -33,8 +43,8 @@ Your machine-wide `~/.claude` assets:
 
 - CLAUDE.md and config files first, then **Skills**, **Subagents**, and **Commands**.
 - A **Projects** folder holding per-project memory.
-- A **Plugins** folder listing every installed plugin, nested under its source marketplace with
-  its version, and an `N Updates available` indicator when a newer version exists in your local
+- A **Plugins** folder listing your user-scope (machine-wide) installs, nested under their source
+  marketplace with their version, and an `N Updates available` indicator when a newer version exists in your local
   catalog (no network calls are made). Each plugin shows its enabled/disabled state: enabled
   plugins render a green icon, disabled plugins a dimmed icon with a ` (disabled)` suffix. Every
   configured marketplace (from `known_marketplaces.json`) appears here even with no installed
@@ -64,10 +74,16 @@ Your machine-wide `~/.claude` assets:
 Plugin actions shell out to the Claude Code CLI and require `claude` on your `PATH`. After any
 change, restart your Claude Code session to apply it.
 
-**Manage Plugins** opens a graphical panel: click the gear icon on the **Plugins** folder, or
-right-click the **Plugins** folder (or any marketplace) and choose **Manage Plugins**. The panel
-lets you:
+**Manage Plugins** opens a graphical panel: click the gear icon on either **Plugins** folder
+(Global or the Working Directory one), or right-click a **Plugins** folder (or any marketplace)
+and choose **Manage Plugins**. The panel lets you:
 
+- Choose a **scope** for install/enable/disable: **Global (all projects)** (writes
+  `~/.claude/settings.json`), **This project - team** (writes the open folder's
+  `.claude/settings.json`), or **This project - just me** (writes `.claude/settings.local.json`).
+  The two project options appear only when a folder is open. Opening the panel from the Working
+  Directory **Plugins** folder preselects the team scope; each row's Enabled/Disabled status
+  reflects the selected scope.
 - Pick a marketplace from a dropdown, or **Add Marketplace** / **Remove Marketplace** without
   leaving the panel. Right-clicking a specific marketplace opens the panel scoped to it.
 - **Search** the selected marketplace's plugins by name or description.
@@ -77,14 +93,33 @@ lets you:
 
 The same actions are also available straight from the tree by right-clicking a node:
 
-- **Enable Plugin** / **Disable Plugin**: toggle a plugin (runs `claude plugin enable|disable <id>`).
-  The menu shows whichever action applies to the current state.
+- **Enable Plugin** / **Disable Plugin** (Global folder): toggle a machine-wide plugin (runs
+  `claude plugin enable|disable <id>` at user scope). The menu shows whichever action applies.
+- On a **Working Directory > Plugins** row you instead get two independent per-scope toggles, each
+  labeled Enable or Disable based on that scope's current setting (value `true` shows Disable;
+  `false` or unset shows Enable):
+  - **Enable/Disable Plugin (Team)** -> `claude plugin enable|disable <id> --scope project`
+    (writes the team-shared `.claude/settings.json`).
+  - **Enable/Disable Plugin (Personal)** -> `... --scope local` (writes your personal
+    `.claude/settings.local.json`).
+  Both run in the project folder. Because the personal (local) setting overrides the team (project)
+  one, a plugin can read as disabled overall while still enabled for the team -- the Team/Personal
+  split lets you flip exactly the level you mean (and the row's tooltip shows both plus the
+  effective state).
 - **Update Plugin**: right-click an out-of-date plugin.
 - **Update Plugins**: right-click a marketplace folder to update every out-of-date plugin from it.
 - **Update All Plugins**: right-click the **Plugins** folder.
-- **Uninstall Plugin**: right-click a plugin.
-- **Add Marketplace**: right-click the **Plugins** folder and enter a GitHub repo, URL, or path
-  (runs `claude plugin marketplace add <source>`).
+- **Uninstall Plugin**: right-click a plugin. Uninstall is scope-aware (`claude plugin uninstall
+  <id> --scope user|project|local`): from the **Working Directory > Plugins** folder it targets
+  the entry's own scope; from **Global** it defaults to user scope. When the plugin touches more
+  than one scope (installed at its scope and/or has `enabledPlugins` entries at user/project/local),
+  a scope picker lists each touched scope (**Global (all projects)**, **Project (team)**, **Just me
+  (local)** -- annotated `installed` or `enabled here`) plus **All scopes**; for each chosen scope
+  it runs `uninstall --scope <scope>` where the plugin is installed or `disable --scope <scope>`
+  where it is only enabled, then rescans. If instead the CLI blocks a single-scope uninstall
+  because the plugin is enabled at project (team) scope, a dialog offers **Remove for team &
+  uninstall** (edits the shared `.claude/settings.json`, then uninstalls) and **Disable for just
+  me** (`--scope local`, leaves it installed and enabled for the team).
 - **Refresh Source**: right-click a marketplace folder to pull the latest from its source
   (runs `claude plugin marketplace update <name>`).
 - **Remove Marketplace**: right-click a marketplace folder (runs `claude plugin marketplace remove <name>`).

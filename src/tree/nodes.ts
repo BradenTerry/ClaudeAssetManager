@@ -61,15 +61,18 @@ export class PluginFolderNode extends vscode.TreeItem {
   /** When set, children are listed lazily from this real install directory. */
   readonly dirPath: string | undefined;
   readonly children: GroupNode[];
+  /** Scope of this plugin's enablement entry (project-scoped plugins only). */
+  readonly scope: 'project' | 'local' | undefined;
 
   constructor(desc: PluginFolderNodeDescriptor) {
     super(desc.label, vscode.TreeItemCollapsibleState.Collapsed);
     this.pluginName = desc.pluginName;
     this.pluginId = desc.pluginId;
     this.dirPath = desc.dirPath;
+    this.scope = desc.scope;
     const enTok = desc.enabled === false ? 'Disabled' : 'Enabled';
     const outTok = desc.outdated ? 'Outdated' : '';
-    this.contextValue = `assetPluginFolder${enTok}${outTok}`;
+    this.contextValue = desc.contextValue ?? `assetPluginFolder${enTok}${outTok}`;
     if (desc.enabled === false) {
       this.iconPath = new vscode.ThemeIcon('circle-slash', new vscode.ThemeColor('disabledForeground'));
     } else if (desc.enabled === true) {
@@ -77,7 +80,9 @@ export class PluginFolderNode extends vscode.TreeItem {
     } else {
       this.iconPath = new vscode.ThemeIcon('folder');
     }
-    if (desc.dirPath !== undefined) {
+    if (desc.tooltip !== undefined) {
+      this.tooltip = desc.tooltip;
+    } else if (desc.dirPath !== undefined) {
       this.tooltip = desc.dirPath;
     }
     if (desc.description !== undefined) {

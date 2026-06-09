@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import * as fs from 'fs';
 import * as path from 'path';
 import { makeTempDir, writeFile } from './fixtures';
 import {
@@ -8,6 +9,8 @@ import {
   isOutdated,
   readEnabledPlugins,
   readKnownMarketplaces,
+  readProjectEnabledPlugins,
+  removeEnabledPluginEntry,
   InstalledPluginInfo
 } from '../../src/core/pluginMetadata';
 
@@ -169,6 +172,119 @@ describe('readInstalledPlugins', () => {
       cleanup();
     }
   });
+
+  // ---------------------------------------------------------------------------
+  // AC1 / AC5: scope field parsing
+  // ---------------------------------------------------------------------------
+
+  it('AC1-scope-project: entry with scope "project" -> info.scope === "project"', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'installed_plugins.json');
+      writeFile(filePath, JSON.stringify({
+        version: 2,
+        plugins: {
+          'myplugin@mk': [{
+            scope: 'project',
+            installPath: '/abs/cache/mk/myplugin/1.0.0',
+            version: '1.0.0',
+            lastUpdated: '2025-06-01T00:00:00Z'
+          }]
+        }
+      }));
+      const result = readInstalledPlugins(filePath);
+      assert.strictEqual(result.get('myplugin')!.scope, 'project');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC1-scope-local: entry with scope "local" -> info.scope === "local"', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'installed_plugins.json');
+      writeFile(filePath, JSON.stringify({
+        version: 2,
+        plugins: {
+          'myplugin@mk': [{
+            scope: 'local',
+            installPath: '/abs/cache/mk/myplugin/1.0.0',
+            version: '1.0.0',
+            lastUpdated: '2025-06-01T00:00:00Z'
+          }]
+        }
+      }));
+      const result = readInstalledPlugins(filePath);
+      assert.strictEqual(result.get('myplugin')!.scope, 'local');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC1-scope-user: entry with scope "user" -> info.scope === "user"', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'installed_plugins.json');
+      writeFile(filePath, JSON.stringify({
+        version: 2,
+        plugins: {
+          'myplugin@mk': [{
+            scope: 'user',
+            installPath: '/abs/cache/mk/myplugin/1.0.0',
+            version: '1.0.0',
+            lastUpdated: '2025-06-01T00:00:00Z'
+          }]
+        }
+      }));
+      const result = readInstalledPlugins(filePath);
+      assert.strictEqual(result.get('myplugin')!.scope, 'user');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC5-scope-absent: entry with no scope field -> info.scope defaults to "user"', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'installed_plugins.json');
+      writeFile(filePath, JSON.stringify({
+        version: 2,
+        plugins: {
+          'myplugin@mk': [{
+            installPath: '/abs/cache/mk/myplugin/1.0.0',
+            version: '1.0.0',
+            lastUpdated: '2025-06-01T00:00:00Z'
+          }]
+        }
+      }));
+      const result = readInstalledPlugins(filePath);
+      assert.strictEqual(result.get('myplugin')!.scope, 'user');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC5-scope-bogus: entry with unrecognized scope value (e.g. "team") -> info.scope defaults to "user"', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'installed_plugins.json');
+      writeFile(filePath, JSON.stringify({
+        version: 2,
+        plugins: {
+          'myplugin@mk': [{
+            scope: 'team',
+            installPath: '/abs/cache/mk/myplugin/1.0.0',
+            version: '1.0.0',
+            lastUpdated: '2025-06-01T00:00:00Z'
+          }]
+        }
+      }));
+      const result = readInstalledPlugins(filePath);
+      assert.strictEqual(result.get('myplugin')!.scope, 'user');
+    } finally {
+      cleanup();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -300,7 +416,8 @@ describe('isOutdated', () => {
       marketplace: 'mk',
       version,
       installPath: '/abs/cache/test-plugin/1.0.0',
-      lastUpdated: '2025-06-01T00:00:00Z'
+      lastUpdated: '2025-06-01T00:00:00Z',
+      scope: 'user'
     };
   }
 
@@ -650,6 +767,227 @@ describe('readCatalogPlugins', () => {
       const result = readCatalogPlugins(filePath);
       assert.ok(Array.isArray(result));
       assert.strictEqual(result.length, 0);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// readProjectEnabledPlugins
+// ---------------------------------------------------------------------------
+
+describe('readProjectEnabledPlugins', () => {
+  it('AC1: settings.json only -> returns project-scoped entries', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const settingsPath = path.join(root, 'settings.json');
+      const localPath = path.join(root, 'settings.local.json');
+      writeFile(settingsPath, JSON.stringify({
+        enabledPlugins: { 'a@mk': true, 'b@mk': false }
+      }));
+
+      const result = readProjectEnabledPlugins(settingsPath, localPath);
+
+      assert.ok(result instanceof Map);
+      assert.strictEqual(result.size, 2);
+      assert.deepStrictEqual(result.get('a@mk'), { enabled: true, scope: 'project' });
+      assert.deepStrictEqual(result.get('b@mk'), { enabled: false, scope: 'project' });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC2: local overrides project entry -> scope becomes local', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const settingsPath = path.join(root, 'settings.json');
+      const localPath = path.join(root, 'settings.local.json');
+      writeFile(settingsPath, JSON.stringify({ enabledPlugins: { 'a@mk': true } }));
+      writeFile(localPath, JSON.stringify({ enabledPlugins: { 'a@mk': false } }));
+
+      const result = readProjectEnabledPlugins(settingsPath, localPath);
+
+      assert.strictEqual(result.size, 1);
+      assert.deepStrictEqual(result.get('a@mk'), { enabled: false, scope: 'local' });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC3: local-only id has scope local; project-only id has scope project', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const settingsPath = path.join(root, 'settings.json');
+      const localPath = path.join(root, 'settings.local.json');
+      writeFile(settingsPath, JSON.stringify({ enabledPlugins: { 'proj@mk': true } }));
+      writeFile(localPath, JSON.stringify({ enabledPlugins: { 'local@mk': false } }));
+
+      const result = readProjectEnabledPlugins(settingsPath, localPath);
+
+      assert.strictEqual(result.size, 2);
+      assert.deepStrictEqual(result.get('proj@mk'), { enabled: true, scope: 'project' });
+      assert.deepStrictEqual(result.get('local@mk'), { enabled: false, scope: 'local' });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC4a: missing both files returns empty Map', () => {
+    const result = readProjectEnabledPlugins('/nonexistent/settings.json', '/nonexistent/settings.local.json');
+    assert.ok(result instanceof Map);
+    assert.strictEqual(result.size, 0);
+  });
+
+  it('AC4b: malformed JSON in settings.json is silently ignored; local file contributes', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const settingsPath = path.join(root, 'settings.json');
+      const localPath = path.join(root, 'settings.local.json');
+      writeFile(settingsPath, 'not valid json {{{{');
+      writeFile(localPath, JSON.stringify({ enabledPlugins: { 'a@mk': true } }));
+
+      const result = readProjectEnabledPlugins(settingsPath, localPath);
+
+      assert.strictEqual(result.size, 1);
+      assert.deepStrictEqual(result.get('a@mk'), { enabled: true, scope: 'local' });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC4c: non-boolean values in enabledPlugins are skipped', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const settingsPath = path.join(root, 'settings.json');
+      const localPath = path.join(root, 'settings.local.json');
+      writeFile(settingsPath, JSON.stringify({
+        enabledPlugins: { 'a@mk': true, 'b@mk': 'yes', 'c@mk': 1 }
+      }));
+
+      const result = readProjectEnabledPlugins(settingsPath, localPath);
+
+      assert.strictEqual(result.size, 1);
+      assert.deepStrictEqual(result.get('a@mk'), { enabled: true, scope: 'project' });
+      assert.strictEqual(result.has('b@mk'), false);
+      assert.strictEqual(result.has('c@mk'), false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC4d: missing enabledPlugins key returns empty contribution from that file', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const settingsPath = path.join(root, 'settings.json');
+      const localPath = path.join(root, 'settings.local.json');
+      writeFile(settingsPath, JSON.stringify({ someOtherKey: {} }));
+
+      const result = readProjectEnabledPlugins(settingsPath, localPath);
+
+      assert.ok(result instanceof Map);
+      assert.strictEqual(result.size, 0);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// removeEnabledPluginEntry
+// ---------------------------------------------------------------------------
+
+describe('removeEnabledPluginEntry', () => {
+  it('AC1: removes the id key, preserves remaining entry and sibling keys, returns true', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'settings.json');
+      writeFile(filePath, JSON.stringify({
+        enabledPlugins: { 'a@mk': true, 'b@mk': false },
+        other: 1
+      }));
+
+      const result = removeEnabledPluginEntry(filePath, 'a@mk');
+
+      assert.strictEqual(result, true, 'should return true when entry removed');
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      assert.deepStrictEqual(data.enabledPlugins, { 'b@mk': false }, 'only b@mk remains');
+      assert.strictEqual(data.other, 1, 'sibling key preserved');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC3: removes an entry whose value is false, leaves enabledPlugins as {}, returns true', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'settings.json');
+      writeFile(filePath, JSON.stringify({
+        enabledPlugins: { 'x@mk': false }
+      }));
+
+      const result = removeEnabledPluginEntry(filePath, 'x@mk');
+
+      assert.strictEqual(result, true, 'should return true even for false entry');
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      assert.deepStrictEqual(data.enabledPlugins, {}, 'enabledPlugins left as empty object');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC2a: absent id returns false, file content unchanged', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'settings.json');
+      const original = JSON.stringify({ enabledPlugins: { 'y@mk': true } });
+      writeFile(filePath, original);
+
+      const result = removeEnabledPluginEntry(filePath, 'z@mk');
+
+      assert.strictEqual(result, false, 'absent id returns false');
+      const after = fs.readFileSync(filePath, 'utf8');
+      assert.strictEqual(after, original, 'file content unchanged');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC2b: missing file returns false and does not create a file', () => {
+    const missingPath = '/nonexistent/dir/settings.json';
+
+    const result = removeEnabledPluginEntry(missingPath, 'a@mk');
+
+    assert.strictEqual(result, false, 'missing file returns false');
+    assert.strictEqual(fs.existsSync(missingPath), false, 'no file created');
+  });
+
+  it('AC2c: invalid JSON returns false, file content unchanged', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'settings.json');
+      const badContent = '{ not json';
+      writeFile(filePath, badContent);
+
+      const result = removeEnabledPluginEntry(filePath, 'a@mk');
+
+      assert.strictEqual(result, false, 'invalid JSON returns false');
+      const after = fs.readFileSync(filePath, 'utf8');
+      assert.strictEqual(after, badContent, 'file content unchanged');
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('AC2d: no enabledPlugins key returns false', () => {
+    const { root, cleanup } = makeTempDir();
+    try {
+      const filePath = path.join(root, 'settings.json');
+      writeFile(filePath, JSON.stringify({ other: 1 }));
+
+      const result = removeEnabledPluginEntry(filePath, 'a@mk');
+
+      assert.strictEqual(result, false, 'no enabledPlugins key returns false');
     } finally {
       cleanup();
     }

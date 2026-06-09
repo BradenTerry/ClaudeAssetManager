@@ -66,6 +66,12 @@ export interface PluginFolderNodeDescriptor {
   outdated?: boolean;
   /** Enabled state; undefined when unknown (no enabled map was provided). */
   enabled?: boolean;
+  /** Scope of the plugin enablement entry (project-scoped plugins only). */
+  scope?: 'project' | 'local';
+  /** When set, the node uses this contextValue verbatim (overrides the default derived contextValue). */
+  contextValue?: string;
+  /** Multi-line tooltip (plain \n). Set on WD plugin nodes; includes team/local/effective breakdown. */
+  tooltip?: string;
 }
 
 /**
@@ -80,6 +86,12 @@ export interface PluginMetadataOptions {
   enabled?: Map<string, boolean>;
   /** name -> info, from known_marketplaces.json. When provided, empty marketplaces also show in the tree. */
   marketplaces?: Map<string, MarketplaceInfo>;
+  /** Plugin id -> enabled from <proj>/.claude/settings.json (team/project scope). */
+  projectTeamEnabled?: Map<string, boolean>;
+  /** Plugin id -> enabled from <proj>/.claude/settings.local.json (local/personal scope). */
+  projectLocalEnabled?: Map<string, boolean>;
+  /** Absolute path to the working-directory's .claude folder, used as dirPath for the project plugins root. */
+  projectClaudeDir?: string;
 }
 
 export interface GroupNodeDescriptor {
@@ -349,6 +361,150 @@ function joinDesc(parts: (string | undefined)[]): string | undefined {
   return kept.length ? kept.join(' · ') : undefined;
 }
 
+/**
+ * Build the "plugins" folder that appears under the Working Directory container.
+ * MEMBERSHIP: installs whose scope is 'project' or 'local' (mirrors the Global
+ * folder which shows 'user' installs). Plugins are grouped under marketplace
+ * containers (contextValue assetProjectMarketplace), mirroring the Global block.
+ *
+ * Effective enabled rule: local ?? team ?? true (local overrides team; default enabled).
+ *
+ * Returns undefined only when projectInstalls.size===0 && !claudeDir.
+ * When claudeDir is set but no project/local installs exist, returns an empty-state
+ * folder with description '(no plugins installed)'.
+ */
+function buildProjectPluginsFolder(
+  installedPlugins: Map<string, InstalledPluginInfo>,
+  teamEnabled: Map<string, boolean>,
+  localEnabled: Map<string, boolean>,
+  outdated: Set<string>,
+  claudeDir: string | undefined
+): ContainerNodeDescriptor | undefined {
+  // Filter to project/local installs only -- these are the WD-owned installs
+  const projectInstalls = new Map(
+    [...installedPlugins].filter(([, i]) => i.scope === 'project' || i.scope === 'local')
+  );
+
+  // Suppress the folder entirely when no installs AND no claudeDir
+  if (projectInstalls.size === 0 && !claudeDir) return undefined;
+
+  // Empty state: no project/local installs but claudeDir is set
+  if (projectInstalls.size === 0) {
+    return {
+      kind: NodeKind.Container,
+      containerKind: 'plugins',
+      label: 'plugins',
+      children: [],
+      contextValue: 'assetProjectPluginsRoot',
+      dirPath: claudeDir,
+      description: '(no plugins installed)'
+    };
+  }
+
+  const statusLabel = (v: boolean | undefined): string =>
+    v === undefined ? 'not set' : (v ? 'enabled' : 'disabled');
+
+  // Build a plugin folder for a single install record
+  const buildPluginFolder = (info: InstalledPluginInfo): PluginFolderNodeDescriptor => {
+    const team = teamEnabled.get(info.id);
+    const local = localEnabled.get(info.id);
+    // effective = local ?? team ?? true
+    const effective = local !== undefined ? local : (team !== undefined ? team : true);
+    const isOut = outdated.has(info.name);
+
+    // Inline description: version + update indicator + effective status
+    let descStr = info.version ?? '';
+    if (isOut) descStr += descStr ? ' - update available ↓' : 'update available ↓';
+    const statusStr = effective ? 'enabled' : 'disabled';
+    descStr += descStr ? ` · ${statusStr}` : statusStr;
+
+    // Tooltip breakdown
+    const tooltip = [
+      info.id,
+      `Team (project): ${statusLabel(team)}`,
+      `Just me (local): ${statusLabel(local)}`,
+      `Effective: ${statusStr}`
+    ].join('\n');
+
+    const teamTok = team === true ? 'On' : 'Off';
+    const personalTok = local === true ? 'On' : 'Off';
+    return {
+      kind: NodeKind.PluginFolder as NodeKind.PluginFolder,
+      pluginName: info.name,
+      pluginId: info.id,
+      label: info.name,
+      children: [],
+      description: descStr,
+      outdated: isOut || undefined,
+      enabled: effective,
+      scope: info.scope as 'project' | 'local',
+      contextValue: `assetProjectPluginFolderTeam${teamTok}Personal${personalTok}`,
+      dirPath: info.installPath || undefined,
+      tooltip
+    };
+  };
+
+  // Build an effective map for all project/local installs (used by enabledSummary)
+  const allProjectInstalls = [...projectInstalls.values()];
+  const effectiveMap = new Map(
+    allProjectInstalls.map(i => {
+      const local = localEnabled.get(i.id);
+      const team = teamEnabled.get(i.id);
+      const effective = local !== undefined ? local : (team !== undefined ? team : true);
+      return [i.id, effective];
+    })
+  );
+
+  // Group by marketplace
+  const byMarketplace = new Map<string, InstalledPluginInfo[]>();
+  for (const info of projectInstalls.values()) {
+    const mk = info.marketplace || '(local)';
+    const group = byMarketplace.get(mk);
+    if (group) {
+      group.push(info);
+    } else {
+      byMarketplace.set(mk, [info]);
+    }
+  }
+
+  const marketplaceFolders: ContainerNodeDescriptor[] = [...byMarketplace.keys()]
+    .sort((a, b) => a.localeCompare(b))
+    .map(mk => {
+      const infos = (byMarketplace.get(mk) ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
+      const sample = infos.find(i => i.installPath);
+      const mkDir = sample ? path.dirname(path.dirname(sample.installPath)) : undefined;
+      const mkOutdated = infos.filter(i => outdated.has(i.name)).length;
+      const updatesText = mkOutdated > 0
+        ? `${mkOutdated} update${mkOutdated === 1 ? '' : 's'} available ↓`
+        : undefined;
+      const mkDescription = joinDesc([enabledSummary(infos, effectiveMap), updatesText]);
+      return {
+        kind: NodeKind.Container as NodeKind.Container,
+        containerKind: 'marketplace' as const,
+        label: mk,
+        children: infos.map(buildPluginFolder),
+        description: mkDescription,
+        contextValue: 'assetProjectMarketplace',
+        dirPath: mkDir
+      };
+    });
+
+  const rootOutdatedCount = allProjectInstalls.filter(i => outdated.has(i.name)).length;
+  const rootUpdatesText = rootOutdatedCount > 0
+    ? `${rootOutdatedCount} update${rootOutdatedCount === 1 ? '' : 's'} available ↓`
+    : undefined;
+
+  return {
+    kind: NodeKind.Container,
+    containerKind: 'plugins',
+    label: 'plugins',
+    children: marketplaceFolders,
+    contextValue: 'assetProjectPluginsRoot',
+    dirPath: claudeDir,
+    description: joinDesc([enabledSummary(allProjectInstalls, effectiveMap), rootUpdatesText])
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Main builder
 // ---------------------------------------------------------------------------
@@ -380,6 +536,12 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
     (pluginMeta && (pluginMeta as Partial<PluginMetadataOptions>).enabled) ? pluginMeta.enabled : undefined;
   const knownMarketplaces: Map<string, MarketplaceInfo> | undefined =
     (pluginMeta && (pluginMeta as Partial<PluginMetadataOptions>).marketplaces) ? pluginMeta.marketplaces : undefined;
+  const projectTeamEnabled: Map<string, boolean> =
+    (pluginMeta && (pluginMeta as Partial<PluginMetadataOptions>).projectTeamEnabled) ? pluginMeta.projectTeamEnabled! : new Map();
+  const projectLocalEnabled: Map<string, boolean> =
+    (pluginMeta && (pluginMeta as Partial<PluginMetadataOptions>).projectLocalEnabled) ? pluginMeta.projectLocalEnabled! : new Map();
+  const projectClaudeDir: string | undefined =
+    (pluginMeta && (pluginMeta as Partial<PluginMetadataOptions>).projectClaudeDir) ? pluginMeta.projectClaudeDir : undefined;
 
   // Partition by scope
   const globalAssets: ClaudeAsset[] = [];
@@ -421,8 +583,14 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
   // of plugin folders whose children are the scanned assets grouped by type.
   let pluginsFolderNode: ContainerNodeDescriptor | undefined;
 
-  if (installedPlugins.size > 0 || (knownMarketplaces && knownMarketplaces.size > 0)) {
-    const updatableCount = [...installedPlugins.keys()].filter(n => outdatedPlugins.has(n)).length;
+  // Filter to user-scope installs only for the Global plugins folder.
+  // The full installedPlugins map is kept unfiltered for the WD by-id cross-reference.
+  const userInstalls = new Map(
+    [...installedPlugins].filter(([, info]) => (info.scope ?? 'user') === 'user')
+  );
+
+  if (userInstalls.size > 0 || (knownMarketplaces && knownMarketplaces.size > 0)) {
+    const updatableCount = [...userInstalls.keys()].filter(n => outdatedPlugins.has(n)).length;
 
     const buildPluginFolder = (info: InstalledPluginInfo): PluginFolderNodeDescriptor => {
       const isOut = outdatedPlugins.has(info.name);
@@ -445,9 +613,9 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
       };
     };
 
-    // Group installed plugins by their source marketplace.
+    // Group user-scope installed plugins by their source marketplace.
     const byMarketplace = new Map<string, InstalledPluginInfo[]>();
-    for (const info of installedPlugins.values()) {
+    for (const info of userInstalls.values()) {
       const mk = info.marketplace || '(local)';
       const group = byMarketplace.get(mk);
       if (group) {
@@ -468,7 +636,9 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
       .map(mk => {
         const infos = (byMarketplace.get(mk) ?? []).slice().sort((a, b) => a.name.localeCompare(b.name));
         // Marketplace dir on disk is the parent of <plugin>/<version>: .../plugins/cache/<marketplace>.
-        const sample = infos.find(i => i.installPath);
+        // Prefer a user-install sample; fall back to any install for the dir path.
+        const sample = infos.find(i => i.installPath) ??
+          [...installedPlugins.values()].find(i => (i.marketplace || '(local)') === mk && i.installPath);
         const mkDir = sample
           ? path.dirname(path.dirname(sample.installPath))
           : (knownMarketplaces?.get(mk)?.installLocation || undefined);
@@ -491,13 +661,15 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
         };
       });
 
-    // Plugins root for Reveal (.../plugins), derived from any install path.
-    const anyInstall = [...installedPlugins.values()].find(i => i.installPath);
+    // Plugins root for Reveal (.../plugins), derived from a user install if available,
+    // else any install (cache root is shared), else plugin assets fallback.
+    const anyUserInstall = [...userInstalls.values()].find(i => i.installPath);
+    const anyInstall = anyUserInstall ?? [...installedPlugins.values()].find(i => i.installPath);
     const pluginsRoot = anyInstall
       ? deriveSegmentRoot(anyInstall.installPath, 'plugins')
       : (pluginAssets.length > 0 ? deriveSegmentRoot(pluginAssets[0].filePath, 'plugins') : undefined);
 
-    const allInstalled = [...installedPlugins.values()];
+    const allUserInstalled = [...userInstalls.values()];
     const rootUpdates = updatableCount > 0
       ? `${updatableCount} update${updatableCount === 1 ? '' : 's'} available ↓`
       : undefined;
@@ -506,7 +678,7 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
       containerKind: 'plugins',
       label: 'plugins',
       children: marketplaceFolders,
-      description: joinDesc([enabledSummary(allInstalled, enabledMap), rootUpdates]),
+      description: joinDesc([enabledSummary(allUserInstalled, enabledMap), rootUpdates]),
       // Outdated variant gates the "Update All" command; both variants are reveal-able.
       contextValue: updatableCount > 0 ? 'assetPluginsRootOutdated' : 'assetPluginsRoot',
       dirPath: pluginsRoot
@@ -567,10 +739,12 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
   }
 
   // 2. Working Directory container: the root's own assets rendered flat at the top,
-  //    then one sub-container per sub-project (sorted alpha).
+  //    then one sub-container per sub-project (sorted alpha), then the project plugins folder last.
   const sortedProjects = [...projectAssetsByName.entries()].sort(([a], [b]) => a.localeCompare(b));
 
-  if (sortedProjects.length > 0 || workingRootAssets.length > 0) {
+  const projectPluginsFolder = buildProjectPluginsFolder(installedPlugins, projectTeamEnabled, projectLocalEnabled, outdatedPlugins, projectClaudeDir);
+
+  if (sortedProjects.length > 0 || workingRootAssets.length > 0 || projectPluginsFolder !== undefined) {
     const wdChildren: ContainerNodeDescriptor['children'] = [];
 
     // Root-level assets (e.g. the working dir's own .claude/settings.local.json) flat first
@@ -586,6 +760,11 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
         label: projectName,
         children: buildProjectChildren(projAssets)
       });
+    }
+
+    // Project plugins folder is always last
+    if (projectPluginsFolder !== undefined) {
+      wdChildren.push(projectPluginsFolder);
     }
 
     nodes.push({

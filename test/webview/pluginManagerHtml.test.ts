@@ -47,7 +47,9 @@ describe('renderPluginManagerHtml -- AC10', () => {
     page: 1,
     pageCount: 1,
     totalCount: 1,
-    query: ''
+    query: '',
+    scope: 'user',
+    projectScopeAvailable: false
   };
 
   it('AC10a: each row name appears (escaped) in output', () => {
@@ -120,7 +122,9 @@ describe('renderPluginManagerHtml -- AC11: nonce and CSP', () => {
     page: 1,
     pageCount: 1,
     totalCount: 0,
-    query: ''
+    query: '',
+    scope: 'user',
+    projectScopeAvailable: false
   };
 
   it('AC11a: nonce appears on inline <script> tag', () => {
@@ -174,7 +178,9 @@ describe('renderPluginManagerHtml -- Remove Marketplace button', () => {
     page: 1,
     pageCount: 1,
     totalCount: 0,
-    query: ''
+    query: '',
+    scope: 'user',
+    projectScopeAvailable: false
   };
 
   const vmLocalSelected: PluginManagerViewModel = {
@@ -244,7 +250,9 @@ describe('renderPluginManagerHtml -- AC5: search input', () => {
       page: 1,
       pageCount: 1,
       totalCount: 0,
-      query
+      query,
+      scope: 'user',
+      projectScopeAvailable: false
     };
   }
 
@@ -298,7 +306,9 @@ describe('renderPluginManagerHtml -- AC6: pagination footer', () => {
       page,
       pageCount,
       totalCount,
-      query: ''
+      query: '',
+      scope: 'user',
+      projectScopeAvailable: false
     };
   }
 
@@ -365,7 +375,9 @@ describe('renderPluginManagerHtml -- AC7: only provided rows rendered', () => {
       page: 1,
       pageCount: 3,
       totalCount: 150,
-      query: ''
+      query: '',
+      scope: 'user',
+      projectScopeAvailable: false
     };
     const html = renderPluginManagerHtml(vm, { nonce, cspSource });
     assert.ok(html.includes('AlphaTool'), 'AlphaTool must appear');
@@ -389,7 +401,9 @@ describe('renderPluginManagerHtml -- AC8: script wiring', () => {
     page: 2,
     pageCount: 3,
     totalCount: 100,
-    query: 'find me'
+    query: 'find me',
+    scope: 'user',
+    projectScopeAvailable: false
   };
 
   it('AC8a: script posts {type:\'search\'} on search input', () => {
@@ -428,5 +442,236 @@ describe('renderPluginManagerHtml -- AC8: script wiring', () => {
   it('AC8d: on load, focus+setSelectionRange called when query is non-empty', () => {
     const html = renderPluginManagerHtml(vm, { nonce, cspSource });
     assert.ok(html.includes('setSelectionRange'), 'script must call setSelectionRange to restore caret');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC6: scope select rendering
+// ---------------------------------------------------------------------------
+
+describe('renderPluginManagerHtml -- AC6: scope select', () => {
+  const nonce = 'scopenonce';
+  const cspSource = 'vscode-webview://test-host';
+
+  function makeVmWithScope(
+    scope: 'user' | 'project' | 'local',
+    projectScopeAvailable: boolean
+  ): PluginManagerViewModel {
+    return {
+      marketplaces: [{ value: 'mk', label: 'mk' }],
+      selected: 'mk',
+      rows: [],
+      page: 1,
+      pageCount: 1,
+      totalCount: 0,
+      query: '',
+      scope,
+      projectScopeAvailable
+    };
+  }
+
+  it('AC6a: scope-select element present with user option always', () => {
+    const html = renderPluginManagerHtml(makeVmWithScope('user', false), { nonce, cspSource });
+    assert.ok(html.includes('id="scope-select"'), 'scope-select element must be present');
+    assert.ok(html.includes('value="user"'), 'user option must always be present');
+  });
+
+  it('AC6b: when projectScopeAvailable=false, project and local options are absent', () => {
+    const html = renderPluginManagerHtml(makeVmWithScope('user', false), { nonce, cspSource });
+    assert.ok(!html.includes('value="project"'), 'project option must be absent when not available');
+    assert.ok(!html.includes('value="local"'), 'local option must be absent when not available');
+  });
+
+  it('AC6c: when projectScopeAvailable=true, project option is present', () => {
+    const html = renderPluginManagerHtml(makeVmWithScope('user', true), { nonce, cspSource });
+    assert.ok(html.includes('value="project"'), 'project option must be present when available');
+  });
+
+  it('AC6d: when projectScopeAvailable=true, local option is present', () => {
+    const html = renderPluginManagerHtml(makeVmWithScope('user', true), { nonce, cspSource });
+    assert.ok(html.includes('value="local"'), 'local option must be present when available');
+  });
+
+  it('AC6e: projectScopeAvailable=false -> exactly one scope option (user)', () => {
+    const html = renderPluginManagerHtml(makeVmWithScope('user', false), { nonce, cspSource });
+    // Count value= occurrences for scope-select options only; easier to check no project/local
+    const selectMatch = html.match(/id="scope-select"[\s\S]*?<\/select>/);
+    assert.ok(selectMatch, 'scope-select element should be present');
+    const selectContent = selectMatch![0];
+    assert.ok(selectContent.includes('value="user"'), 'user option in scope-select');
+    assert.ok(!selectContent.includes('value="project"'), 'project option absent in scope-select');
+    assert.ok(!selectContent.includes('value="local"'), 'local option absent in scope-select');
+  });
+
+  it('AC6f: projectScopeAvailable=true -> three options (user, project, local) in scope-select', () => {
+    const html = renderPluginManagerHtml(makeVmWithScope('user', true), { nonce, cspSource });
+    const selectMatch = html.match(/id="scope-select"[\s\S]*?<\/select>/);
+    assert.ok(selectMatch, 'scope-select element should be present');
+    const selectContent = selectMatch![0];
+    assert.ok(selectContent.includes('value="user"'), 'user option in scope-select');
+    assert.ok(selectContent.includes('value="project"'), 'project option in scope-select');
+    assert.ok(selectContent.includes('value="local"'), 'local option in scope-select');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC7: scope select selected marking
+// ---------------------------------------------------------------------------
+
+describe('renderPluginManagerHtml -- AC7: scope selected marking', () => {
+  const nonce = 'ac7scopenonce';
+  const cspSource = 'vscode-webview://test-host';
+
+  function makeVmWithScope(
+    scope: 'user' | 'project' | 'local',
+    projectScopeAvailable: boolean
+  ): PluginManagerViewModel {
+    return {
+      marketplaces: [{ value: 'mk', label: 'mk' }],
+      selected: 'mk',
+      rows: [],
+      page: 1,
+      pageCount: 1,
+      totalCount: 0,
+      query: '',
+      scope,
+      projectScopeAvailable
+    };
+  }
+
+  it('AC7a: scope="user" -> user option has selected attribute', () => {
+    const html = renderPluginManagerHtml(makeVmWithScope('user', false), { nonce, cspSource });
+    const selectMatch = html.match(/id="scope-select"[\s\S]*?<\/select>/);
+    assert.ok(selectMatch, 'scope-select must be present');
+    // Look for user option with selected
+    assert.ok(
+      selectMatch![0].includes('value="user" selected') || selectMatch![0].includes("value='user' selected"),
+      'user option should be marked selected when scope=user'
+    );
+  });
+
+  it('AC7b: scope="project" -> project option has selected attribute', () => {
+    const html = renderPluginManagerHtml(makeVmWithScope('project', true), { nonce, cspSource });
+    const selectMatch = html.match(/id="scope-select"[\s\S]*?<\/select>/);
+    assert.ok(selectMatch, 'scope-select must be present');
+    assert.ok(
+      selectMatch![0].includes('value="project" selected') || selectMatch![0].includes("value='project' selected"),
+      'project option should be marked selected when scope=project'
+    );
+    // user option should not be selected
+    assert.ok(
+      !selectMatch![0].includes('value="user" selected'),
+      'user option should NOT be marked selected when scope=project'
+    );
+  });
+
+  it('AC7c: scope="local" -> local option has selected attribute', () => {
+    const html = renderPluginManagerHtml(makeVmWithScope('local', true), { nonce, cspSource });
+    const selectMatch = html.match(/id="scope-select"[\s\S]*?<\/select>/);
+    assert.ok(selectMatch, 'scope-select must be present');
+    assert.ok(
+      selectMatch![0].includes('value="local" selected') || selectMatch![0].includes("value='local' selected"),
+      'local option should be marked selected when scope=local'
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC8: scope included in posted messages + selectScope listener
+// ---------------------------------------------------------------------------
+
+describe('renderPluginManagerHtml -- AC8: scope in script messages', () => {
+  const nonce = 'ac8scopenonce';
+  const cspSource = 'vscode-webview://test-host';
+
+  const vm: PluginManagerViewModel = {
+    marketplaces: [{ value: 'mk', label: 'mk' }],
+    selected: 'mk',
+    rows: [
+      { id: 'foo@mk', name: 'Foo', version: '1.0', installed: true, enabled: true, outdated: false }
+    ],
+    page: 1,
+    pageCount: 1,
+    totalCount: 1,
+    query: '',
+    scope: 'user',
+    projectScopeAvailable: true
+  };
+
+  it('AC8a: inline script references scope-select element', () => {
+    const html = renderPluginManagerHtml(vm, { nonce, cspSource });
+    assert.ok(html.includes('scope-select'), 'script must reference scope-select');
+  });
+
+  it('AC8b: script posts selectScope message on change of scope-select', () => {
+    const html = renderPluginManagerHtml(vm, { nonce, cspSource });
+    assert.ok(
+      html.includes("'selectScope'") || html.includes('"selectScope"'),
+      'script must post type selectScope on scope change'
+    );
+  });
+
+  it('AC8c: script includes scope in install/enable/disable/uninstall postMessage payloads', () => {
+    const html = renderPluginManagerHtml(vm, { nonce, cspSource });
+    // The action handler should read the scope from scope-select and include it
+    // We check that the word 'scope' appears in the postMessage call for actions
+    // (the script must read scope-select.value and include it as 'scope' in the message)
+    const scriptMatch = html.match(/<script nonce[\s\S]*?<\/script>/);
+    assert.ok(scriptMatch, 'inline script must be present');
+    const script = scriptMatch![0];
+    // The action click handler must reference scope
+    assert.ok(
+      script.includes('scope'),
+      'action click handler must include scope in postMessage'
+    );
+    // And scope-select must be read in the handler
+    assert.ok(
+      script.includes('scope-select'),
+      'script must read scope from scope-select element'
+    );
+  });
+
+  it('AC8d: action buttons still carry data-id and data-action attributes', () => {
+    const html = renderPluginManagerHtml(vm, { nonce, cspSource });
+    assert.ok(html.includes('data-id="foo@mk"'), 'button must carry data-id');
+    assert.ok(html.includes('data-action="disable"') || html.includes('data-action="enable"'), 'button must carry data-action');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC10: scope-specific enabled status via different enabled maps
+// ---------------------------------------------------------------------------
+
+describe('buildMarketplacePluginRows -- AC10: scope-specific enabled status', () => {
+  // This test validates that passing different enabled maps (one per scope) yields
+  // different row.enabled values for the same installed plugin.
+  // The function itself is pure (src/core/marketplacePluginView.ts); the host picks the
+  // correct map per scope and passes it in.
+  it('AC10a: user-scope enabled map -> row.enabled reflects user scope', () => {
+    const { buildMarketplacePluginRows } = require('../../src/core/marketplacePluginView');
+    const installedMap = new Map([['foo', { name: 'foo', id: 'foo@mk', marketplace: 'mk', version: '1.0', installPath: '/p', lastUpdated: '' }]]);
+    // User-scope: enabled
+    const userEnabled = new Map([['foo@mk', true]]);
+    const rows = buildMarketplacePluginRows('mk', installedMap, [], userEnabled, new Map());
+    assert.strictEqual(rows[0].enabled, true);
+  });
+
+  it('AC10b: project-scope enabled map has different value -> row.enabled flips', () => {
+    const { buildMarketplacePluginRows } = require('../../src/core/marketplacePluginView');
+    const installedMap = new Map([['foo', { name: 'foo', id: 'foo@mk', marketplace: 'mk', version: '1.0', installPath: '/p', lastUpdated: '' }]]);
+    // Project-scope: disabled
+    const projectEnabled = new Map([['foo@mk', false]]);
+    const rows = buildMarketplacePluginRows('mk', installedMap, [], projectEnabled, new Map());
+    assert.strictEqual(rows[0].enabled, false);
+  });
+
+  it('AC10c: local-scope enabled map absent entry -> row.enabled is false', () => {
+    const { buildMarketplacePluginRows } = require('../../src/core/marketplacePluginView');
+    const installedMap = new Map([['foo', { name: 'foo', id: 'foo@mk', marketplace: 'mk', version: '1.0', installPath: '/p', lastUpdated: '' }]]);
+    // Local-scope settings file has no entry for this plugin
+    const localEnabled = new Map<string, boolean>(); // empty
+    const rows = buildMarketplacePluginRows('mk', installedMap, [], localEnabled, new Map());
+    // Absent from enabled map -> false (default for installed plugins)
+    assert.strictEqual(rows[0].enabled, false);
   });
 });

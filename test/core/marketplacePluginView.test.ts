@@ -8,7 +8,7 @@ import { InstalledPluginInfo, CatalogPlugin } from '../../src/core/pluginMetadat
 
 function makeInstalled(name: string, marketplace: string, version: string | null): InstalledPluginInfo {
   const id = marketplace ? `${name}@${marketplace}` : name;
-  return { name, id, marketplace, version, installPath: `/cache/${name}`, lastUpdated: '2025-01-01T00:00:00Z' };
+  return { name, id, marketplace, version, installPath: `/cache/${name}`, lastUpdated: '2025-01-01T00:00:00Z', scope: 'user' };
 }
 
 function makeCatalog(name: string, marketplace: string, version: string, description?: string): CatalogPlugin {

@@ -26,6 +26,10 @@ export interface PluginManagerViewModel {
   totalCount: number;
   /** Active search query (already trimmed/validated by host). */
   query: string;
+  /** Currently selected installation scope. */
+  scope: 'user' | 'project' | 'local';
+  /** Whether project-scoped options should be shown (a workspace folder is open). */
+  projectScopeAvailable: boolean;
 }
 
 /** Render a full HTML document for the Plugin Manager webview panel. */
@@ -34,6 +38,17 @@ export function renderPluginManagerHtml(
   opts: { nonce: string; cspSource: string }
 ): string {
   const { nonce, cspSource } = opts;
+
+  const scopeOptionsHtml = [
+    { value: 'user', label: 'Global (all projects)' },
+    ...(vm.projectScopeAvailable ? [
+      { value: 'project', label: 'This project - team' },
+      { value: 'local', label: 'This project - just me' }
+    ] : [])
+  ].map(opt => {
+    const sel = opt.value === vm.scope ? ' selected' : '';
+    return `<option value="${escapeHtml(opt.value)}"${sel}>${escapeHtml(opt.label)}</option>`;
+  }).join('\n          ');
 
   const optionsHtml = vm.marketplaces.map(mk => {
     const sel = mk.value === vm.selected ? ' selected' : '';
@@ -154,6 +169,9 @@ export function renderPluginManagerHtml(
 </head>
 <body>
   <div class="toolbar">
+    <select id="scope-select">
+          ${scopeOptionsHtml}
+    </select>
     <select id="marketplace-select">
           ${optionsHtml}
     </select>
@@ -178,9 +196,15 @@ export function renderPluginManagerHtml(
       if (!btn) return;
       const id = btn.getAttribute('data-id');
       const action = btn.getAttribute('data-action');
+      const scope = document.getElementById('scope-select').value;
       if (id && action) {
-        vscode.postMessage({ type: action, id: id });
+        vscode.postMessage({ type: action, id: id, scope: scope });
       }
+    });
+
+    // Scope select.
+    document.getElementById('scope-select').addEventListener('change', function() {
+      vscode.postMessage({ type: 'selectScope', scope: this.value });
     });
 
     // Marketplace select.

@@ -38,6 +38,8 @@ export interface InstalledPluginInfo {
   installPath: string;
   /** ISO timestamp string from the lastUpdated field */
   lastUpdated: string;
+  /** Install scope from installed_plugins.json. Defaults to 'user' when absent or unrecognized. */
+  scope: 'user' | 'project' | 'local';
 }
 
 /**
@@ -75,8 +77,11 @@ export function readInstalledPlugins(filePath: string): Map<string, InstalledPlu
       const rawVersion = typeof entry['version'] === 'string' ? entry['version'] : '';
       const version = rawVersion && rawVersion !== 'unknown' ? rawVersion : null;
       const lastUpdated = typeof entry['lastUpdated'] === 'string' ? entry['lastUpdated'] : '';
+      const rawScope = entry['scope'];
+      const scope: 'user' | 'project' | 'local' =
+        rawScope === 'project' || rawScope === 'local' ? rawScope : 'user';
 
-      result.set(name, { name, id: key, marketplace, version, installPath, lastUpdated });
+      result.set(name, { name, id: key, marketplace, version, installPath, lastUpdated, scope });
     }
     return result;
   } catch {
@@ -185,6 +190,70 @@ export function readEnabledPlugins(filePath: string): Map<string, boolean> {
     }
     return result;
   } catch { return new Map(); }
+}
+
+/**
+ * Remove enabledPlugins[id] from a settings JSON file. Returns true when an entry was removed.
+ * Defensive: missing file, unreadable, non-JSON, no enabledPlugins object, or absent id -> false,
+ * no write. Preserves sibling keys; writes 2-space-indented JSON with a trailing newline.
+ */
+export function removeEnabledPluginEntry(settingsPath: string, id: string): boolean {
+  try {
+    const raw = fs.readFileSync(settingsPath, 'utf8');
+    const data = JSON.parse(raw) as Record<string, unknown>;
+    const ep = data['enabledPlugins'];
+    if (!ep || typeof ep !== 'object' || Array.isArray(ep)) return false;
+    const obj = ep as Record<string, unknown>;
+    if (!Object.prototype.hasOwnProperty.call(obj, id)) return false;
+    delete obj[id];
+    fs.writeFileSync(settingsPath, JSON.stringify(data, null, 2) + '\n', 'utf8');
+    return true;
+  } catch { return false; }
+}
+
+export type PluginScope = 'project' | 'local';
+
+export interface ProjectPluginEnablement {
+  enabled: boolean;
+  scope: PluginScope;
+}
+
+/** Parse enabledPlugins from a single settings file. Returns an empty Map on any failure. */
+function parseEnabledPluginsFromFile(filePath: string): Map<string, boolean> {
+  try {
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf8')) as Record<string, unknown>;
+    const ep = data['enabledPlugins'];
+    if (!ep || typeof ep !== 'object' || Array.isArray(ep)) return new Map();
+    const result = new Map<string, boolean>();
+    for (const [id, val] of Object.entries(ep as Record<string, unknown>)) {
+      if (typeof val === 'boolean') result.set(id, val);
+    }
+    return result;
+  } catch { return new Map(); }
+}
+
+/**
+ * Merge enabledPlugins from a project's settings.json (scope 'project') and
+ * settings.local.json (scope 'local'). settings.local wins on conflicting ids and
+ * the surviving entry carries scope 'local'.
+ * Each file is read defensively (empty contribution on any failure / non-boolean value).
+ */
+export function readProjectEnabledPlugins(
+  settingsPath: string,
+  settingsLocalPath: string
+): Map<string, ProjectPluginEnablement> {
+  const projectMap = parseEnabledPluginsFromFile(settingsPath);
+  const localMap = parseEnabledPluginsFromFile(settingsLocalPath);
+
+  const result = new Map<string, ProjectPluginEnablement>();
+  for (const [id, enabled] of projectMap) {
+    result.set(id, { enabled, scope: 'project' });
+  }
+  // local wins: overlay and mark as 'local'
+  for (const [id, enabled] of localMap) {
+    result.set(id, { enabled, scope: 'local' });
+  }
+  return result;
 }
 
 /** Compare two dotted numeric version strings. Returns >0 if a is newer than b. */

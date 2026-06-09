@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { MarketplacePluginRow } from '../core/marketplacePluginView';
 import { renderPluginManagerHtml, PluginManagerViewModel } from './pluginManagerHtml';
-import { isValidPluginId, isValidMarketplaceName } from '../core/pluginValidation';
+import { isValidPluginId, isValidMarketplaceName, normalizePluginScope, PluginInstallScope } from '../core/pluginValidation';
 
 /** Data returned by the host for a given selected marketplace and page. */
 export interface PluginManagerData {
@@ -12,15 +12,19 @@ export interface PluginManagerData {
   pageCount: number;
   totalCount: number;
   query: string;
+  /** Currently active installation scope. */
+  scope: PluginInstallScope;
+  /** Whether project-scoped options are available (a workspace folder is open). */
+  projectScopeAvailable: boolean;
 }
 
 /** Host-side operations injected into the panel. */
 export interface PluginManagerDeps {
-  getData(selected: string, page: number, query: string): PluginManagerData;
-  install(id: string): Promise<void>;
-  uninstall(id: string): Promise<void>;
-  enable(id: string): Promise<void>;
-  disable(id: string): Promise<void>;
+  getData(selected: string, page: number, query: string, scope: PluginInstallScope): PluginManagerData;
+  install(id: string, scope: PluginInstallScope): Promise<void>;
+  uninstall(id: string, scope: PluginInstallScope): Promise<void>;
+  enable(id: string, scope: PluginInstallScope): Promise<void>;
+  disable(id: string, scope: PluginInstallScope): Promise<void>;
   addMarketplace(): Promise<void>;
   removeMarketplace(marketplace: string): Promise<void>;
 }
@@ -49,21 +53,25 @@ function toViewModel(data: PluginManagerData): PluginManagerViewModel {
     page: data.page,
     pageCount: data.pageCount,
     totalCount: data.totalCount,
-    query: data.query
+    query: data.query,
+    scope: data.scope,
+    projectScopeAvailable: data.projectScopeAvailable
   };
 }
 
 /**
  * Open (or reveal) the Plugin Manager singleton webview panel.
  *
- * @param context   - extension context for disposable registration
- * @param deps      - host operations (read data, install, uninstall, etc.)
- * @param preselect - optional marketplace value to preselect
+ * @param context        - extension context for disposable registration
+ * @param deps           - host operations (read data, install, uninstall, etc.)
+ * @param preselect      - optional marketplace value to preselect
+ * @param scopePreselect - optional scope to preselect ('user' | 'project' | 'local')
  */
 export function openPluginManager(
   context: vscode.ExtensionContext,
   deps: PluginManagerDeps,
-  preselect?: string
+  preselect?: string,
+  scopePreselect?: PluginInstallScope
 ): void {
   if (panel) {
     // Panel already open -- delegate to the live closure to avoid TDZ on let declarations.
@@ -84,10 +92,11 @@ export function openPluginManager(
   let currentSelected = preselect ?? '';
   let currentPage = 1;
   let currentQuery = '';
+  let currentScope: PluginInstallScope = scopePreselect ?? 'user';
 
   function renderPanel(selected: string, page: number, query: string): void {
     if (!panel) return;
-    const data = deps.getData(selected, page, query);
+    const data = deps.getData(selected, page, query, currentScope);
     currentSelected = data.selected;
     currentPage = data.page;
     currentQuery = data.query;
@@ -107,13 +116,22 @@ export function openPluginManager(
   panel.webview.onDidReceiveMessage(async (msg: Record<string, unknown>) => {
     const type = msg['type'];
 
+    if (type === 'selectScope') {
+      const scope = normalizePluginScope(msg['scope']);
+      if (!scope) return;
+      currentScope = scope;
+      renderPanel(currentSelected, currentPage, currentQuery);
+      return;
+    }
+
     if (type === 'install' || type === 'uninstall' || type === 'enable' || type === 'disable') {
       const id = msg['id'];
       if (typeof id !== 'string' || !isValidPluginId(id)) return;
-      if (type === 'install') { await deps.install(id); }
-      else if (type === 'uninstall') { await deps.uninstall(id); }
-      else if (type === 'enable') { await deps.enable(id); }
-      else { await deps.disable(id); }
+      const msgScope = normalizePluginScope(msg['scope']) ?? currentScope;
+      if (type === 'install') { await deps.install(id, msgScope); }
+      else if (type === 'uninstall') { await deps.uninstall(id, msgScope); }
+      else if (type === 'enable') { await deps.enable(id, msgScope); }
+      else { await deps.disable(id, msgScope); }
       renderPanel(currentSelected, currentPage, currentQuery);
       return;
     }

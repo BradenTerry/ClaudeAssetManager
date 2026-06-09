@@ -488,8 +488,8 @@ function makePluginAsset(name: string, filePath: string): ClaudeAsset {
   };
 }
 
-function makeInstalledInfo(name: string, installPath: string, version: string | null = null, lastUpdated = '2025-06-01T00:00:00Z'): InstalledPluginInfo {
-  return { name, id: `${name}@mk`, marketplace: 'mk', version, installPath, lastUpdated };
+function makeInstalledInfo(name: string, installPath: string, version: string | null = null, lastUpdated = '2025-06-01T00:00:00Z', scope: 'user' | 'project' | 'local' = 'user'): InstalledPluginInfo {
+  return { name, id: `${name}@mk`, marketplace: 'mk', version, installPath, lastUpdated, scope };
 }
 
 function makePluginMeta(
@@ -1467,5 +1467,826 @@ describe('buildTreeNodes -- memory project folder contextValue and dirPath', () 
       'contextValue must be set even when dirPath is undefined');
     // dirPath may be undefined; no crash is the assertion
     assert.strictEqual(projectFolder.dirPath, undefined, 'dirPath should be undefined when path has no projects marker');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Project-scoped plugins under the Working Directory tree
+// MIGRATED: team/local raw maps + effective = local ?? team ?? true
+// ---------------------------------------------------------------------------
+
+describe('buildTreeNodes -- project-scoped plugins under Working Directory', () => {
+  const PROJ_CLAUDE_DIR = '/Users/braden/Projects/.claude';
+  const CACHE = '/Users/braden/.claude/plugins/cache';
+
+  // Make an InstalledPluginInfo with configurable scope (default 'user')
+  function makeInstalledById(
+    name: string,
+    version: string | null,
+    installPath: string,
+    scope: 'user' | 'project' | 'local' = 'user',
+    marketplace = 'mk'
+  ): InstalledPluginInfo {
+    return { name, id: `${name}@${marketplace}`, marketplace, version, installPath, lastUpdated: '2025-01-01T00:00:00Z', scope };
+  }
+
+  // Helper: get the 'plugins' folder that is the last child of the Working Directory container
+  function getProjectPluginsFolder(nodes: ReturnType<typeof buildTreeNodes>): ContainerNodeDescriptor | undefined {
+    const wd = getWorkingDir(nodes);
+    if (!wd) return undefined;
+    return wd.children.find(
+      c => c.kind === NodeKind.Container && (c as ContainerNodeDescriptor).containerKind === 'plugins'
+    ) as ContainerNodeDescriptor | undefined;
+  }
+
+  // Helper: collect all WD PluginFolderNodeDescriptors, flattening marketplace children
+  function getWdPluginFolders(nodes: ReturnType<typeof buildTreeNodes>): PluginFolderNodeDescriptor[] {
+    const folder = getProjectPluginsFolder(nodes);
+    if (!folder) return [];
+    const out: PluginFolderNodeDescriptor[] = [];
+    for (const child of folder.children) {
+      if (child.kind === NodeKind.PluginFolder) {
+        out.push(child as PluginFolderNodeDescriptor);
+      } else if (child.kind === NodeKind.Container && (child as ContainerNodeDescriptor).containerKind === 'marketplace') {
+        for (const f of (child as ContainerNodeDescriptor).children) {
+          if (f.kind === NodeKind.PluginFolder) out.push(f as PluginFolderNodeDescriptor);
+        }
+      }
+    }
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // AC1: install-membership + marketplace grouping
+  // ---------------------------------------------------------------------------
+
+  it('AC1: installs mixing user+project+local -> WD folder has assetProjectMarketplace containers; user installs absent; project/local nested and sorted', () => {
+    const userInst = makeInstalledById('user-plugin', '1.0', `${CACHE}/mk/user-plugin/1.0`, 'user');
+    const projInst = makeInstalledById('proj-plugin', '2.0', `${CACHE}/mk/proj-plugin/2.0`, 'project');
+    const localInst = makeInstalledById('aaa-local', '3.0', `${CACHE}/mk/aaa-local/3.0`, 'local');
+
+    const installedPlugins = new Map([
+      ['user-plugin', userInst],
+      ['proj-plugin', projInst],
+      ['aaa-local', localInst]
+    ]);
+
+    const meta: PluginMetadataOptions = {
+      installedPlugins,
+      outdated: new Set(),
+      projectTeamEnabled: new Map(),
+      projectLocalEnabled: new Map(),
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const folder = getProjectPluginsFolder(nodes)!;
+    assert.ok(folder, 'expected plugins folder under WD');
+    assert.strictEqual(folder.contextValue, 'assetProjectPluginsRoot');
+
+    // Children of the plugins root should be marketplace containers
+    const mkContainers = (folder.children as ContainerNodeDescriptor[]).filter(
+      c => c.kind === NodeKind.Container && (c as ContainerNodeDescriptor).containerKind === 'marketplace'
+    );
+    assert.ok(mkContainers.length > 0, 'expected marketplace containers under WD plugins root');
+
+    // All marketplace containers should have contextValue assetProjectMarketplace
+    for (const mk of mkContainers) {
+      assert.strictEqual((mk as ContainerNodeDescriptor).contextValue, 'assetProjectMarketplace',
+        `marketplace container should have contextValue assetProjectMarketplace, got: "${(mk as ContainerNodeDescriptor).contextValue}"`);
+    }
+
+    // user-plugin absent from WD
+    const wdNames = getWdPluginFolders(nodes).map(f => f.pluginName);
+    assert.ok(!wdNames.includes('user-plugin'), 'user-scope install must NOT appear in WD plugins');
+    assert.ok(wdNames.includes('proj-plugin'), 'project-scope install must appear in WD plugins');
+    assert.ok(wdNames.includes('aaa-local'), 'local-scope install must appear in WD plugins');
+
+    // Sorted alpha within marketplace: aaa-local before proj-plugin
+    const mkFolder = mkContainers[0] as ContainerNodeDescriptor;
+    const pluginLabels = (mkFolder.children as PluginFolderNodeDescriptor[]).map(f => f.pluginName);
+    assert.ok(pluginLabels.indexOf('aaa-local') < pluginLabels.indexOf('proj-plugin'),
+      'plugins within a marketplace should be sorted alpha');
+  });
+
+  it('AC1b: multiple marketplaces -> sorted alpha', () => {
+    const instZebra = makeInstalledById('p1', '1.0', `${CACHE}/zebra-mk/p1/1.0`, 'project', 'zebra-mk');
+    const instAlpha = makeInstalledById('p2', '1.0', `${CACHE}/alpha-mk/p2/1.0`, 'local', 'alpha-mk');
+
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['p1', instZebra], ['p2', instAlpha]]),
+      outdated: new Set(),
+      projectTeamEnabled: new Map(),
+      projectLocalEnabled: new Map(),
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const folder = getProjectPluginsFolder(nodes)!;
+    const mkLabels = (folder.children as ContainerNodeDescriptor[]).map(c => c.label);
+    assert.ok(mkLabels.indexOf('alpha-mk') < mkLabels.indexOf('zebra-mk'), 'marketplaces sorted alpha');
+  });
+
+  // ---------------------------------------------------------------------------
+  // AC2 (new spec): scope:project install -> effective enabled/disabled from team/local maps
+  // ---------------------------------------------------------------------------
+
+  it('AC2-node-scope: scope:project install, no enablement entries -> node scope project + contextValue TeamOffPersonalOff', () => {
+    const inst = makeInstalledById('my-plugin', '1.0', `${CACHE}/mk/my-plugin/1.0`, 'project');
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['my-plugin', inst]]),
+      outdated: new Set(),
+      projectTeamEnabled: new Map(),
+      projectLocalEnabled: new Map(),
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const folder = getWdPluginFolders(nodes).find(f => f.pluginName === 'my-plugin')!;
+    assert.ok(folder, 'expected my-plugin folder');
+    assert.strictEqual(folder.scope, 'project', 'node scope must equal INSTALL scope');
+    // AC3: both undefined -> TeamOff PersonalOff
+    assert.strictEqual(folder.contextValue, 'assetProjectPluginFolderTeamOffPersonalOff');
+  });
+
+  it('AC2b-node-scope: scope:local install, no enablement entries -> node scope local + contextValue TeamOffPersonalOff', () => {
+    const inst = makeInstalledById('local-plugin', '1.0', `${CACHE}/mk/local-plugin/1.0`, 'local');
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['local-plugin', inst]]),
+      outdated: new Set(),
+      projectTeamEnabled: new Map(),
+      projectLocalEnabled: new Map(),
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const folder = getWdPluginFolders(nodes).find(f => f.pluginName === 'local-plugin')!;
+    assert.ok(folder, 'expected local-plugin folder');
+    assert.strictEqual(folder.scope, 'local', 'node scope must equal INSTALL scope');
+    // AC3: both undefined -> TeamOff PersonalOff
+    assert.strictEqual(folder.contextValue, 'assetProjectPluginFolderTeamOffPersonalOff');
+  });
+
+  it('AC2c-node-scope: install scope:project, local=false -> effective disabled, contextValue TeamOffPersonalOff', () => {
+    // Scope MUST follow the install record; effective state comes from team/local maps
+    const inst = makeInstalledById('conflict-plugin', '2.0', `${CACHE}/mk/conflict-plugin/2.0`, 'project');
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['conflict-plugin', inst]]),
+      outdated: new Set(),
+      projectTeamEnabled: new Map(),
+      projectLocalEnabled: new Map([['conflict-plugin@mk', false]]),  // local=false -> effective disabled
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const folder = getWdPluginFolders(nodes).find(f => f.pluginName === 'conflict-plugin')!;
+    assert.ok(folder, 'expected conflict-plugin folder');
+    assert.strictEqual(folder.scope, 'project', 'node scope must be install scope (project)');
+    // AC1: team undefined (Off), local=false (Off) -> TeamOffPersonalOff
+    assert.strictEqual(folder.contextValue, 'assetProjectPluginFolderTeamOffPersonalOff');
+    assert.strictEqual(folder.enabled, false, 'effective disabled because local=false');
+  });
+
+  // ---------------------------------------------------------------------------
+  // AC1 (new spec): per-scope status -- tooltip + inline description
+  // ---------------------------------------------------------------------------
+
+  it('AC1-effective: team=undefined, local=true -> effective enabled; description ends with " · enabled"; tooltip breakdown', () => {
+    const inst = makeInstalledById('my-plugin', '1.0', `${CACHE}/mk/my-plugin/1.0`, 'project');
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['my-plugin', inst]]),
+      outdated: new Set(),
+      projectTeamEnabled: new Map(),                                // team = undefined
+      projectLocalEnabled: new Map([['my-plugin@mk', true]]),      // local = true
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const folder = getWdPluginFolders(nodes).find(f => f.pluginName === 'my-plugin')!;
+    assert.ok(folder, 'expected my-plugin folder');
+    assert.strictEqual(folder.enabled, true, 'effective should be true');
+    assert.ok(folder.description && folder.description.endsWith(' · enabled'),
+      `description should end with " · enabled", got: "${folder.description}"`);
+    // AC2: team undefined (Off), local=true (On) -> TeamOffPersonalOn
+    assert.strictEqual(folder.contextValue, 'assetProjectPluginFolderTeamOffPersonalOn');
+    // Tooltip breakdown
+    assert.ok(folder.tooltip, 'expected tooltip');
+    assert.ok(folder.tooltip!.includes('Team (project): not set'),
+      `tooltip should include "Team (project): not set", got: "${folder.tooltip}"`);
+    assert.ok(folder.tooltip!.includes('Just me (local): enabled'),
+      `tooltip should include "Just me (local): enabled", got: "${folder.tooltip}"`);
+    assert.ok(folder.tooltip!.includes('Effective: enabled'),
+      `tooltip should include "Effective: enabled", got: "${folder.tooltip}"`);
+  });
+
+  it('AC2-effective: team=true, local=false -> effective disabled; description ends with " · disabled"; tooltip breakdown', () => {
+    const inst = makeInstalledById('con-plugin', '2.0', `${CACHE}/mk/con-plugin/2.0`, 'project');
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['con-plugin', inst]]),
+      outdated: new Set(),
+      projectTeamEnabled: new Map([['con-plugin@mk', true]]),     // team = true
+      projectLocalEnabled: new Map([['con-plugin@mk', false]]),   // local = false -> effective disabled
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const folder = getWdPluginFolders(nodes).find(f => f.pluginName === 'con-plugin')!;
+    assert.ok(folder, 'expected con-plugin folder');
+    assert.strictEqual(folder.enabled, false, 'effective should be false (local overrides team)');
+    assert.ok(folder.description && folder.description.endsWith(' · disabled'),
+      `description should end with " · disabled", got: "${folder.description}"`);
+    // AC1: team=true (On), local=false (Off) -> TeamOnPersonalOff
+    assert.strictEqual(folder.contextValue, 'assetProjectPluginFolderTeamOnPersonalOff');
+    assert.ok(folder.tooltip!.includes('Team (project): enabled'),
+      `tooltip should include "Team (project): enabled", got: "${folder.tooltip}"`);
+    assert.ok(folder.tooltip!.includes('Just me (local): disabled'),
+      `tooltip should include "Just me (local): disabled", got: "${folder.tooltip}"`);
+    assert.ok(folder.tooltip!.includes('Effective: disabled'),
+      `tooltip should include "Effective: disabled", got: "${folder.tooltip}"`);
+  });
+
+  it('AC3-effective: neither team nor local set -> effective enabled (default); tooltip "not set" for both', () => {
+    const inst = makeInstalledById('neu-plugin', '1.0', `${CACHE}/mk/neu-plugin/1.0`, 'project');
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['neu-plugin', inst]]),
+      outdated: new Set(),
+      projectTeamEnabled: new Map(),
+      projectLocalEnabled: new Map(),
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const folder = getWdPluginFolders(nodes).find(f => f.pluginName === 'neu-plugin')!;
+    assert.ok(folder, 'expected neu-plugin folder');
+    assert.strictEqual(folder.enabled, true, 'effective should be true (default)');
+    assert.ok(folder.description && folder.description.endsWith(' · enabled'),
+      `description should end with " · enabled", got: "${folder.description}"`);
+    assert.ok(folder.tooltip!.includes('Team (project): not set'),
+      `tooltip should include "Team (project): not set", got: "${folder.tooltip}"`);
+    assert.ok(folder.tooltip!.includes('Just me (local): not set'),
+      `tooltip should include "Just me (local): not set", got: "${folder.tooltip}"`);
+    assert.ok(folder.tooltip!.includes('Effective: enabled'),
+      `tooltip should include "Effective: enabled", got: "${folder.tooltip}"`);
+  });
+
+  // ---------------------------------------------------------------------------
+  // AC-CV: contextValue Team/Personal token format (per-scope toggles)
+  // ---------------------------------------------------------------------------
+
+  it('AC-CV-1: team=true, local=false -> contextValue TeamOnPersonalOff; effective disabled; tooltip unchanged', () => {
+    const inst = makeInstalledById('cv1-plugin', '1.0', `${CACHE}/mk/cv1-plugin/1.0`, 'project');
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['cv1-plugin', inst]]),
+      outdated: new Set(),
+      projectTeamEnabled: new Map([['cv1-plugin@mk', true]]),
+      projectLocalEnabled: new Map([['cv1-plugin@mk', false]]),
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+    const nodes = buildTreeNodes([], meta);
+    const folder = getWdPluginFolders(nodes).find(f => f.pluginName === 'cv1-plugin')!;
+    assert.ok(folder, 'expected cv1-plugin folder');
+    assert.strictEqual(folder.contextValue, 'assetProjectPluginFolderTeamOnPersonalOff');
+    assert.strictEqual(folder.enabled, false, 'effective disabled (local=false overrides team=true)');
+    assert.ok(folder.tooltip!.includes('Team (project): enabled'), 'tooltip team line');
+    assert.ok(folder.tooltip!.includes('Just me (local): disabled'), 'tooltip local line');
+    assert.ok(folder.tooltip!.includes('Effective: disabled'), 'tooltip effective line');
+  });
+
+  it('AC-CV-2: team=false (or unset), local=true -> contextValue TeamOffPersonalOn', () => {
+    const inst = makeInstalledById('cv2-plugin', '1.0', `${CACHE}/mk/cv2-plugin/1.0`, 'project');
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['cv2-plugin', inst]]),
+      outdated: new Set(),
+      projectTeamEnabled: new Map(),                                 // team undefined -> Off
+      projectLocalEnabled: new Map([['cv2-plugin@mk', true]]),      // local=true -> On
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+    const nodes = buildTreeNodes([], meta);
+    const folder = getWdPluginFolders(nodes).find(f => f.pluginName === 'cv2-plugin')!;
+    assert.ok(folder, 'expected cv2-plugin folder');
+    assert.strictEqual(folder.contextValue, 'assetProjectPluginFolderTeamOffPersonalOn');
+  });
+
+  it('AC-CV-3a: both undefined -> contextValue TeamOffPersonalOff; effective true (default)', () => {
+    const inst = makeInstalledById('cv3a-plugin', '1.0', `${CACHE}/mk/cv3a-plugin/1.0`, 'project');
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['cv3a-plugin', inst]]),
+      outdated: new Set(),
+      projectTeamEnabled: new Map(),
+      projectLocalEnabled: new Map(),
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+    const nodes = buildTreeNodes([], meta);
+    const folder = getWdPluginFolders(nodes).find(f => f.pluginName === 'cv3a-plugin')!;
+    assert.ok(folder, 'expected cv3a-plugin folder');
+    assert.strictEqual(folder.contextValue, 'assetProjectPluginFolderTeamOffPersonalOff');
+    assert.strictEqual(folder.enabled, true, 'effective true (default when both unset)');
+  });
+
+  it('AC-CV-3b: both true -> contextValue TeamOnPersonalOn; effective true', () => {
+    const inst = makeInstalledById('cv3b-plugin', '1.0', `${CACHE}/mk/cv3b-plugin/1.0`, 'project');
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['cv3b-plugin', inst]]),
+      outdated: new Set(),
+      projectTeamEnabled: new Map([['cv3b-plugin@mk', true]]),
+      projectLocalEnabled: new Map([['cv3b-plugin@mk', true]]),
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+    const nodes = buildTreeNodes([], meta);
+    const folder = getWdPluginFolders(nodes).find(f => f.pluginName === 'cv3b-plugin')!;
+    assert.ok(folder, 'expected cv3b-plugin folder');
+    assert.strictEqual(folder.contextValue, 'assetProjectPluginFolderTeamOnPersonalOn');
+    assert.strictEqual(folder.enabled, true, 'effective true when both true');
+  });
+
+  it('AC-CV-4: contextValue startsWith assetProjectPluginFolder (uninstall menu still matches)', () => {
+    const inst = makeInstalledById('cv4-plugin', '1.0', `${CACHE}/mk/cv4-plugin/1.0`, 'project');
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['cv4-plugin', inst]]),
+      outdated: new Set(),
+      projectTeamEnabled: new Map([['cv4-plugin@mk', true]]),
+      projectLocalEnabled: new Map(),
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+    const nodes = buildTreeNodes([], meta);
+    const folder = getWdPluginFolders(nodes).find(f => f.pluginName === 'cv4-plugin')!;
+    assert.ok(folder, 'expected cv4-plugin folder');
+    assert.ok(
+      folder.contextValue && folder.contextValue.startsWith('assetProjectPluginFolder'),
+      `contextValue must start with "assetProjectPluginFolder", got: "${folder.contextValue}"`
+    );
+  });
+
+  it('AC4-effective: version + update text + enabled status all render in description; effective-based summary counts', () => {
+    const instA = makeInstalledById('a-plugin', '1.0', `${CACHE}/mk/a-plugin/1.0`, 'project');
+    const instB = makeInstalledById('b-plugin', '2.0', `${CACHE}/mk/b-plugin/2.0`, 'local');
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['a-plugin', instA], ['b-plugin', instB]]),
+      outdated: new Set(['a-plugin']),  // 1 update
+      projectTeamEnabled: new Map(),
+      projectLocalEnabled: new Map([['b-plugin@mk', false]]),  // b disabled locally
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const aFolder = getWdPluginFolders(nodes).find(f => f.pluginName === 'a-plugin')!;
+    const bFolder = getWdPluginFolders(nodes).find(f => f.pluginName === 'b-plugin')!;
+
+    // a-plugin: version + update available + enabled
+    assert.ok(aFolder.description && aFolder.description.includes('1.0'), `a description should include version: "${aFolder.description}"`);
+    assert.ok(aFolder.description && aFolder.description.includes('update available'), `a description should include "update available": "${aFolder.description}"`);
+    assert.ok(aFolder.description && aFolder.description.endsWith(' · enabled'), `a description should end with " · enabled": "${aFolder.description}"`);
+
+    // b-plugin: version + disabled
+    assert.ok(bFolder.description && bFolder.description.includes('2.0'), `b description should include version: "${bFolder.description}"`);
+    assert.ok(bFolder.description && bFolder.description.endsWith(' · disabled'), `b description should end with " · disabled": "${bFolder.description}"`);
+
+    // Summary counts: 1/2 enabled (a=enabled, b=disabled)
+    const pluginsRoot = getProjectPluginsFolder(nodes)!;
+    const mkFolder = (pluginsRoot.children as ContainerNodeDescriptor[]).find(c => c.label === 'mk')!;
+    assert.ok(mkFolder.description && mkFolder.description.includes('1/2 plugins enabled'),
+      `marketplace description should include "1/2 plugins enabled", got: "${mkFolder.description}"`);
+    assert.ok(pluginsRoot.description && pluginsRoot.description.includes('1/2 plugins enabled'),
+      `root description should include "1/2 plugins enabled", got: "${pluginsRoot.description}"`);
+  });
+
+  // ---------------------------------------------------------------------------
+  // AC-compat: old tests rewritten without projectPlugins
+  // ---------------------------------------------------------------------------
+
+  it('AC-compat-version: version appears in plugin folder description; dirPath = installPath', () => {
+    const installPath = `${CACHE}/mk/versioned/1.2.3`;
+    const inst = makeInstalledById('versioned', '1.2.3', installPath, 'project');
+
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['versioned', inst]]),
+      outdated: new Set(),
+      projectTeamEnabled: new Map(),
+      projectLocalEnabled: new Map(),
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const folder = getWdPluginFolders(nodes).find(f => f.pluginName === 'versioned')!;
+    assert.ok(folder, 'expected versioned folder');
+    assert.ok(folder.description && folder.description.includes('1.2.3'),
+      `description should include version, got: "${folder.description}"`);
+    assert.strictEqual(folder.dirPath, installPath, 'dirPath should equal installPath');
+  });
+
+  it('AC-compat-update: update available text and flag on plugin folder when in outdated set', () => {
+    const inst = makeInstalledById('old-plugin', '1.0', `${CACHE}/mk/old-plugin/1.0`, 'project');
+
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['old-plugin', inst]]),
+      outdated: new Set(['old-plugin']),
+      projectTeamEnabled: new Map(),
+      projectLocalEnabled: new Map(),
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const folder = getWdPluginFolders(nodes).find(f => f.pluginName === 'old-plugin')!;
+    assert.ok(folder, 'expected old-plugin folder');
+    assert.ok(folder.description && folder.description.includes('update available'),
+      `description should include "update available", got: "${folder.description}"`);
+    assert.strictEqual(folder.outdated, true, 'outdated flag should be true');
+  });
+
+  // ---------------------------------------------------------------------------
+  // AC5: empty state (claudeDir set, no project/local installs) + no-dir guard
+  // ---------------------------------------------------------------------------
+
+  it('AC5a: claudeDir set + no project/local installs -> folder present with (no plugins installed), no children', () => {
+    const userInst = makeInstalledById('user-only', '1.0', `${CACHE}/mk/user-only/1.0`, 'user');
+
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['user-only', userInst]]),
+      outdated: new Set(),
+      projectTeamEnabled: new Map(),
+      projectLocalEnabled: new Map(),
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const folder = getProjectPluginsFolder(nodes)!;
+    assert.ok(folder, 'expected a plugins folder when claudeDir is set, even with no project/local installs');
+    assert.strictEqual(folder.contextValue, 'assetProjectPluginsRoot');
+    assert.strictEqual(folder.description, '(no plugins installed)',
+      `expected "(no plugins installed)", got: "${folder.description}"`);
+    assert.strictEqual(folder.children.length, 0, 'no children when no project/local installs');
+    assert.strictEqual(folder.dirPath, PROJ_CLAUDE_DIR);
+  });
+
+  it('AC5b: no claudeDir + no project/local installs -> no folder', () => {
+    const userInst = makeInstalledById('user-only', '1.0', `${CACHE}/mk/user-only/1.0`, 'user');
+
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['user-only', userInst]]),
+      outdated: new Set(),
+      projectTeamEnabled: new Map(),
+      projectLocalEnabled: new Map(),
+      projectClaudeDir: undefined
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const folder = getProjectPluginsFolder(nodes);
+    assert.strictEqual(folder, undefined, 'no folder when no claudeDir and no project/local installs');
+  });
+
+  it('AC5c: no installs at all + claudeDir set -> empty folder', () => {
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map(),
+      outdated: new Set(),
+      projectTeamEnabled: new Map(),
+      projectLocalEnabled: new Map(),
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const folder = getProjectPluginsFolder(nodes)!;
+    assert.ok(folder, 'expected a plugins folder');
+    assert.strictEqual(folder.description, '(no plugins installed)');
+    assert.strictEqual(folder.children.length, 0);
+  });
+
+  it('AC5d: no installs + no claudeDir -> no folder', () => {
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map(),
+      outdated: new Set(),
+      projectTeamEnabled: new Map(),
+      projectLocalEnabled: new Map(),
+      projectClaudeDir: undefined
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const folder = getProjectPluginsFolder(nodes);
+    assert.strictEqual(folder, undefined, 'no folder when completely empty');
+  });
+
+  // ---------------------------------------------------------------------------
+  // AC6: folder is LAST WD child; WD container emitted even when it is the only content
+  // ---------------------------------------------------------------------------
+
+  it('AC6a: plugins folder is LAST child of Working Directory (after sub-projects)', () => {
+    const inst = makeInstalledById('foo', '1.0', `${CACHE}/mk/foo/1.0`, 'project');
+    const assets: ClaudeAsset[] = [
+      makeAsset(AssetType.Skill, 'proj-skill', '/Users/braden/Projects/MyApp/.claude/skills/proj-skill/SKILL.md', AssetScope.Project, '/Users/braden/Projects')
+    ];
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['foo', inst]]),
+      outdated: new Set(),
+      projectTeamEnabled: new Map(),
+      projectLocalEnabled: new Map(),
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+
+    const nodes = buildTreeNodes(assets, meta);
+    const wd = getWorkingDir(nodes)!;
+    assert.ok(wd, 'expected Working Directory container');
+    const last = wd.children[wd.children.length - 1];
+    assert.strictEqual(last.kind, NodeKind.Container, 'last child should be Container');
+    assert.strictEqual((last as ContainerNodeDescriptor).containerKind, 'plugins', 'last child should be plugins folder');
+  });
+
+  it('AC6b: WD container emitted when plugins folder (project install) is the only WD content', () => {
+    const inst = makeInstalledById('foo', '1.0', `${CACHE}/mk/foo/1.0`, 'project');
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['foo', inst]]),
+      outdated: new Set(),
+      projectTeamEnabled: new Map(),
+      projectLocalEnabled: new Map(),
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const wd = getWorkingDir(nodes);
+    assert.ok(wd, 'Working Directory container must appear when only a plugins folder is present');
+  });
+
+  it('AC6c: WD container emitted when only an empty-state plugins folder (claudeDir set, no installs)', () => {
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map(),
+      outdated: new Set(),
+      projectTeamEnabled: new Map(),
+      projectLocalEnabled: new Map(),
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const wd = getWorkingDir(nodes);
+    assert.ok(wd, 'WD must appear when claudeDir is set even if no installs');
+    assert.strictEqual(wd!.children.length, 1, 'WD should have exactly 1 child: the plugins folder');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Regression: no pluginMeta -> no WD plugins folder
+  // ---------------------------------------------------------------------------
+
+  it('AC-REG-1: no pluginMeta at all -> no WD plugins folder', () => {
+    const assets: ClaudeAsset[] = [
+      makeAsset(AssetType.Skill, 'proj-skill', '/Users/braden/Projects/MyApp/.claude/skills/proj-skill/SKILL.md', AssetScope.Project, '/Users/braden/Projects')
+    ];
+    const nodes = buildTreeNodes(assets);
+    const folder = getProjectPluginsFolder(nodes);
+    assert.strictEqual(folder, undefined, 'no project plugins folder when no pluginMeta');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Global Plugins folder unchanged when project/local installs present
+  // ---------------------------------------------------------------------------
+
+  it('AC-REG-2: Global Plugins folder unchanged when project/local installs present', () => {
+    const userInst = makeInstalledById('user-plugin', '1.0', `${CACHE}/mk/user-plugin/1.0`, 'user');
+    const projInst = makeInstalledById('proj-plugin', '2.0', `${CACHE}/mk/proj-plugin/2.0`, 'project');
+
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['user-plugin', userInst], ['proj-plugin', projInst]]),
+      outdated: new Set(),
+      projectTeamEnabled: new Map(),
+      projectLocalEnabled: new Map(),
+      projectClaudeDir: PROJ_CLAUDE_DIR
+    };
+
+    const nodes = buildTreeNodes([], meta);
+
+    // Global still shows user-plugin
+    const globalFolders = getPluginFolders(nodes);
+    assert.ok(globalFolders.some(f => f.pluginName === 'user-plugin'), 'user-plugin should appear in Global');
+    assert.ok(!globalFolders.some(f => f.pluginName === 'proj-plugin'), 'proj-plugin must NOT appear in Global');
+
+    // WD shows proj-plugin
+    const wdFolders = getWdPluginFolders(nodes);
+    assert.ok(wdFolders.some(f => f.pluginName === 'proj-plugin'), 'proj-plugin should appear in WD');
+    assert.ok(!wdFolders.some(f => f.pluginName === 'user-plugin'), 'user-plugin must NOT appear in WD');
+  });
+
+  it('AC-REG-3: stale enablement entry with no matching install produces no WD node', () => {
+    // WD membership is driven solely by installedPlugins (scope project|local).
+    // A stale teamEnabled/localEnabled entry with no matching install must produce no folder.
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map(),
+      outdated: new Set(),
+      projectTeamEnabled: new Map([['ghost@claude-plugins-official', true]]),
+      projectLocalEnabled: new Map(),
+      projectClaudeDir: PROJ_CLAUDE_DIR,
+      marketplaces: new Map()
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const wdFolders = getWdPluginFolders(nodes);
+    assert.strictEqual(wdFolders.length, 0, `expected 0 WD plugin folders (no install records), got: ${wdFolders.map(f => f.pluginName).join(', ')}`);
+
+    const pluginsFolder = getProjectPluginsFolder(nodes)!;
+    assert.ok(pluginsFolder, 'plugins folder should still appear because claudeDir is set');
+    assert.strictEqual(pluginsFolder.description, '(no plugins installed)');
+    assert.strictEqual(pluginsFolder.children.length, 0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // AC4: WD project-plugins folder cross-references a project-scoped install (scope filtering test)
+  // ---------------------------------------------------------------------------
+
+  it('AC-scope-filter: WD project plugin has correct version and dirPath from the install record', () => {
+    const projInstallPath = `${CACHE}/mk/proj-plugin/2.0.0`;
+    const projInstall = makeInstalledById('proj-plugin', '2.0.0', projInstallPath, 'project');
+
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['proj-plugin', projInstall]]),
+      outdated: new Set(),
+      projectTeamEnabled: new Map(),
+      projectLocalEnabled: new Map(),
+      projectClaudeDir: '/Users/braden/Projects/.claude'
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const wd = getWorkingDir(nodes)!;
+    assert.ok(wd, 'expected Working Directory container');
+
+    let projFolder: PluginFolderNodeDescriptor | undefined;
+    const pluginsFolder = wd.children.find(
+      c => c.kind === NodeKind.Container && (c as ContainerNodeDescriptor).containerKind === 'plugins'
+    ) as ContainerNodeDescriptor | undefined;
+    assert.ok(pluginsFolder, 'expected plugins folder under WD');
+    for (const child of pluginsFolder!.children) {
+      if (child.kind === NodeKind.Container && (child as ContainerNodeDescriptor).containerKind === 'marketplace') {
+        projFolder = (child as ContainerNodeDescriptor).children.find(
+          f => f.kind === NodeKind.PluginFolder && (f as PluginFolderNodeDescriptor).pluginName === 'proj-plugin'
+        ) as PluginFolderNodeDescriptor | undefined;
+        if (projFolder) break;
+      }
+    }
+    assert.ok(projFolder, 'expected proj-plugin folder under WD plugins marketplace');
+    assert.ok(projFolder!.description && projFolder!.description.includes('2.0.0'),
+      `WD project plugin description should include "2.0.0", got: "${projFolder!.description}"`);
+    assert.strictEqual(projFolder!.dirPath, projInstallPath, 'WD project plugin dirPath should use the install path');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC2 / AC3 / AC4: scope filtering for Global plugins folder
+// ---------------------------------------------------------------------------
+
+describe('buildTreeNodes -- scope filtering (Global shows only user-scope installs)', () => {
+  const CACHE = '/Users/braden/.claude/plugins/cache';
+  const MK = 'mko';
+
+  function makeInstalledInfoScoped(
+    name: string,
+    installPath: string,
+    version: string | null,
+    scope: 'user' | 'project' | 'local'
+  ): InstalledPluginInfo {
+    return { name, id: `${name}@${MK}`, marketplace: MK, version, installPath, lastUpdated: '2025-06-01T00:00:00Z', scope };
+  }
+
+  function makeMarket(name: string): MarketplaceInfo {
+    return { name, installLocation: `${CACHE}/${name}`, lastUpdated: '' };
+  }
+
+  it('AC2: Global marketplace folders contain only user-scope plugin folders; project/local ids absent', () => {
+    const userInstall = makeInstalledInfoScoped('user-plugin', `${CACHE}/${MK}/user-plugin/1.0.0`, '1.0.0', 'user');
+    const projInstall = makeInstalledInfoScoped('proj-plugin', `${CACHE}/${MK}/proj-plugin/1.0.0`, '1.0.0', 'project');
+    const localInstall = makeInstalledInfoScoped('local-plugin', `${CACHE}/${MK}/local-plugin/1.0.0`, '1.0.0', 'local');
+    const marketplaces = new Map([[MK, makeMarket(MK)]]);
+
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([
+        ['user-plugin', userInstall],
+        ['proj-plugin', projInstall],
+        ['local-plugin', localInstall]
+      ]),
+      outdated: new Set(),
+      marketplaces
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const folders = getPluginFolders(nodes);
+    const names = folders.map(f => f.pluginName);
+
+    assert.ok(names.includes('user-plugin'), 'user-scope plugin must appear in Global');
+    assert.ok(!names.includes('proj-plugin'), 'project-scope plugin must NOT appear in Global');
+    assert.ok(!names.includes('local-plugin'), 'local-scope plugin must NOT appear in Global');
+  });
+
+  it('AC2b: a marketplace with ONLY project/local installs shows no plugin folders (marketplace may still appear from knownMarketplaces)', () => {
+    const projInstall = makeInstalledInfoScoped('proj-only', `${CACHE}/${MK}/proj-only/1.0.0`, '1.0.0', 'project');
+    const marketplaces = new Map([[MK, makeMarket(MK)]]);
+
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['proj-only', projInstall]]),
+      outdated: new Set(),
+      marketplaces
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const plugins = getPluginsContainer(nodes);
+    // marketplace still shows (it is in knownMarketplaces) but has no plugin children
+    assert.ok(plugins, 'Plugins container should still appear from knownMarketplaces');
+    const mkFolder = (plugins!.children as ContainerNodeDescriptor[]).find(c => c.label === MK);
+    assert.ok(mkFolder, 'marketplace folder should still show from knownMarketplaces');
+    assert.strictEqual(mkFolder!.children.length, 0, 'no plugin children for project-only marketplace');
+  });
+
+  it('AC2c: no user installs AND no knownMarketplaces -> NO Global plugins folder', () => {
+    const projInstall = makeInstalledInfoScoped('proj-only', `${CACHE}/${MK}/proj-only/1.0.0`, '1.0.0', 'project');
+
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['proj-only', projInstall]]),
+      outdated: new Set()
+      // no marketplaces
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const plugins = getPluginsContainer(nodes);
+    assert.strictEqual(plugins, undefined, 'No Global plugins folder when only project-scope installs and no knownMarketplaces');
+  });
+
+  it('AC3: Global root/marketplace enabled counts and updates count reflect user installs only', () => {
+    const userInstall = makeInstalledInfoScoped('user-plugin', `${CACHE}/${MK}/user-plugin/1.0.0`, '1.0.0', 'user');
+    const projInstall = makeInstalledInfoScoped('proj-plugin', `${CACHE}/${MK}/proj-plugin/2.0.0`, '2.0.0', 'project');
+    const enabledMap = new Map<string, boolean>([
+      ['user-plugin@mko', true],
+      ['proj-plugin@mko', true]  // project one is also "enabled" in the map
+    ]);
+    // proj-plugin is in outdated set (should NOT inflate global count)
+    const outdated = new Set<string>(['proj-plugin']);
+    const marketplaces = new Map([[MK, makeMarket(MK)]]);
+
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([
+        ['user-plugin', userInstall],
+        ['proj-plugin', projInstall]
+      ]),
+      outdated,
+      enabled: enabledMap,
+      marketplaces
+    };
+
+    const nodes = buildTreeNodes([], meta);
+    const plugins = getPluginsContainer(nodes)!;
+    assert.ok(plugins, 'expected Plugins container');
+
+    // Root description: only user-plugin counts -> "1/1 plugins enabled", NOT "2/2" or "1/2"
+    assert.ok(
+      plugins.description && plugins.description.includes('1/1 plugins enabled'),
+      `root description should say "1/1 plugins enabled", got: "${plugins.description}"`
+    );
+
+    // Root updates: proj-plugin (project-scope) in outdated set must NOT appear in global count
+    assert.ok(
+      !plugins.description || !plugins.description.includes('update'),
+      `root description must NOT show updates from project-scope plugin, got: "${plugins.description}"`
+    );
+
+    // Marketplace description also only counts user installs
+    const mkFolder = (plugins.children as ContainerNodeDescriptor[]).find(c => c.label === MK);
+    assert.ok(mkFolder, 'expected marketplace folder');
+    assert.ok(
+      mkFolder!.description && mkFolder!.description.includes('1/1 plugins enabled'),
+      `marketplace description should say "1/1 plugins enabled", got: "${mkFolder!.description}"`
+    );
+    assert.ok(
+      !mkFolder!.description || !mkFolder!.description.includes('update'),
+      `marketplace description must NOT show updates from project-scope plugin, got: "${mkFolder!.description}"`
+    );
+  });
+
+  it('AC4: WD project-plugins folder cross-references a project-scoped install by id for version/dirPath', () => {
+    const projInstallPath = `${CACHE}/${MK}/proj-plugin/2.0.0`;
+    const projInstall = makeInstalledInfoScoped('proj-plugin', projInstallPath, '2.0.0', 'project');
+
+    const meta: PluginMetadataOptions = {
+      installedPlugins: new Map([['proj-plugin', projInstall]]),
+      outdated: new Set(),
+      projectTeamEnabled: new Map(),
+      projectLocalEnabled: new Map(),
+      projectClaudeDir: '/Users/braden/Projects/.claude'
+    };
+
+    const nodes = buildTreeNodes([], meta);
+
+    // WD project plugins folder should have the version and installPath from the project-scoped install
+    const wd = getWorkingDir(nodes)!;
+    assert.ok(wd, 'expected Working Directory container');
+    const pluginsFolder = wd.children.find(
+      c => c.kind === NodeKind.Container && (c as ContainerNodeDescriptor).containerKind === 'plugins'
+    ) as ContainerNodeDescriptor | undefined;
+    assert.ok(pluginsFolder, 'expected plugins folder under WD');
+
+    // Find proj-plugin inside marketplace containers
+    let projFolder: PluginFolderNodeDescriptor | undefined;
+    for (const child of pluginsFolder!.children) {
+      if (child.kind === NodeKind.Container && (child as ContainerNodeDescriptor).containerKind === 'marketplace') {
+        projFolder = (child as ContainerNodeDescriptor).children.find(
+          f => f.kind === NodeKind.PluginFolder && (f as PluginFolderNodeDescriptor).pluginName === 'proj-plugin'
+        ) as PluginFolderNodeDescriptor | undefined;
+        if (projFolder) break;
+      }
+    }
+    assert.ok(projFolder, 'expected proj-plugin folder under WD plugins marketplace');
+    assert.ok(projFolder!.description && projFolder!.description.includes('2.0.0'),
+      `WD project plugin description should include "2.0.0", got: "${projFolder!.description}"`);
+    assert.strictEqual(projFolder!.dirPath, projInstallPath, 'WD project plugin dirPath should use the install path');
   });
 });

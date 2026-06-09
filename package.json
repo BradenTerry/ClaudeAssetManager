@@ -133,9 +133,23 @@
         "category": "Claude Asset Manager"
       },
       {
-        "command": "claudeAssets.addMarketplace",
-        "title": "Add Marketplace",
-        "icon": "$(add)",
+        "command": "claudeAssets.enablePluginTeam",
+        "title": "Enable Plugin (Team)",
+        "category": "Claude Asset Manager"
+      },
+      {
+        "command": "claudeAssets.disablePluginTeam",
+        "title": "Disable Plugin (Team)",
+        "category": "Claude Asset Manager"
+      },
+      {
+        "command": "claudeAssets.enablePluginPersonal",
+        "title": "Enable Plugin (Personal)",
+        "category": "Claude Asset Manager"
+      },
+      {
+        "command": "claudeAssets.disablePluginPersonal",
+        "title": "Disable Plugin (Personal)",
         "category": "Claude Asset Manager"
       },
       {
@@ -178,7 +192,7 @@
         },
         {
           "command": "claudeAssets.revealInOS",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config)-/ || viewItem =~ /^fs(Dir|File)/ || viewItem == assetPluginsRoot || viewItem == assetPluginsRootOutdated || viewItem == assetProjectsRoot || viewItem == assetProjectFolder || viewItem == assetMarketplace || viewItem == assetMarketplaceOutdated)",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config)-/ || viewItem =~ /^fs(Dir|File)/ || viewItem == assetPluginsRoot || viewItem == assetPluginsRootOutdated || viewItem == assetProjectsRoot || viewItem == assetProjectFolder || viewItem == assetMarketplace || viewItem == assetMarketplaceOutdated || viewItem == assetProjectPluginsRoot || viewItem == assetProjectMarketplace)",
           "group": "reveal"
         },
         {
@@ -207,9 +221,29 @@
           "group": "manage"
         },
         {
-          "command": "claudeAssets.addMarketplace",
-          "when": "view == claudeAssets.global && viewItem =~ /^assetPluginsRoot/",
-          "group": "manage"
+          "command": "claudeAssets.enablePluginTeam",
+          "when": "view == claudeAssets.workingDirectory && viewItem =~ /^assetProjectPluginFolder.*TeamOff/",
+          "group": "manage@1"
+        },
+        {
+          "command": "claudeAssets.disablePluginTeam",
+          "when": "view == claudeAssets.workingDirectory && viewItem =~ /^assetProjectPluginFolder.*TeamOn/",
+          "group": "manage@1"
+        },
+        {
+          "command": "claudeAssets.enablePluginPersonal",
+          "when": "view == claudeAssets.workingDirectory && viewItem =~ /^assetProjectPluginFolder.*PersonalOff/",
+          "group": "manage@2"
+        },
+        {
+          "command": "claudeAssets.disablePluginPersonal",
+          "when": "view == claudeAssets.workingDirectory && viewItem =~ /^assetProjectPluginFolder.*PersonalOn/",
+          "group": "manage@2"
+        },
+        {
+          "command": "claudeAssets.uninstallPlugin",
+          "when": "view == claudeAssets.workingDirectory && viewItem =~ /^assetProjectPluginFolder/",
+          "group": "manage@3"
         },
         {
           "command": "claudeAssets.openPluginManager",
@@ -219,6 +253,16 @@
         {
           "command": "claudeAssets.openPluginManager",
           "when": "view == claudeAssets.global && viewItem =~ /^assetPluginsRoot/",
+          "group": "manage"
+        },
+        {
+          "command": "claudeAssets.openPluginManager",
+          "when": "view == claudeAssets.workingDirectory && viewItem == assetProjectPluginsRoot",
+          "group": "inline"
+        },
+        {
+          "command": "claudeAssets.openPluginManager",
+          "when": "view == claudeAssets.workingDirectory && viewItem == assetProjectPluginsRoot",
           "group": "manage"
         },
         {

@@ -185,6 +185,7 @@ const TYPE_LABELS: Partial<Record<AssetType, string>> = {
   [AssetType.Skill]: 'skills',
   [AssetType.Subagent]: 'agents',
   [AssetType.Command]: 'commands',
+  [AssetType.Workflow]: 'workflows',
   [AssetType.Memory]: 'memory'
 };
 
@@ -212,15 +213,24 @@ function deriveSegmentRoot(filePath: string, segment: string): string | undefine
  * format = "md" for markdown files, "config" for JSON config
  */
 function buildContextValue(asset: ClaudeAsset): string {
-  const isConfig = asset.type === AssetType.Config;
-  const format = isConfig ? 'config' : 'md';
+  // format gates context-menu commands: "md" enables the Markdown preview, "config"
+  // and "workflow" are non-markdown files opened in the plain editor.
+  let format: string;
+  if (asset.type === AssetType.Config) {
+    format = 'config';
+  } else if (asset.type === AssetType.Workflow) {
+    format = 'workflow';
+  } else {
+    format = 'md';
+  }
   return `asset-${format}-${asset.scope}`;
 }
 
 function buildAssetNode(asset: ClaudeAsset): AssetNodeDescriptor {
-  const isConfig = asset.type === AssetType.Config;
-  // Open with the user's default editor for the file type; config (JSON) opens as a file.
-  const commandId = isConfig ? 'claudeAssets.openFile' : 'claudeAssets.openMarkdown';
+  // Markdown assets open via the Markdown handler (honoring the preview setting);
+  // everything else (config JSON, workflow JS) opens in the plain editor.
+  const isMarkdown = asset.filePath.toLowerCase().endsWith('.md');
+  const commandId = isMarkdown ? 'claudeAssets.openMarkdown' : 'claudeAssets.openFile';
   return {
     kind: NodeKind.Asset,
     asset,
@@ -245,15 +255,34 @@ const GROUPED_TYPE_ORDER: AssetType[] = [
   AssetType.Skill,
   AssetType.Subagent,
   AssetType.Command,
+  AssetType.Workflow,
   AssetType.Memory
 ];
 
-/** Maps creatable asset types to their on-disk segment directory name. */
+/**
+ * Maps asset types to their on-disk segment directory name. Used both to inject
+ * always-visible empty groups (when ensureBaseDir is set) and to derive create
+ * targets. Workflows are listed here so the group is always shown, but they are
+ * read-only: buildTypeGroups never sets a createTargetDir for them.
+ */
 const TYPE_SEGMENTS: Partial<Record<AssetType, string>> = {
   [AssetType.Skill]: 'skills',
   [AssetType.Subagent]: 'agents',
-  [AssetType.Command]: 'commands'
+  [AssetType.Command]: 'commands',
+  [AssetType.Workflow]: 'workflows'
 };
+
+/**
+ * Asset types whose group stays visible even when empty, so the section (and any
+ * create affordance) is always available. Commands are intentionally excluded:
+ * a command is just a subset of a skill, so an absent commands folder is hidden
+ * rather than shown as a placeholder. Memory is likewise never injected empty.
+ */
+const ALWAYS_SHOWN_WHEN_EMPTY: Set<AssetType> = new Set([
+  AssetType.Skill,
+  AssetType.Subagent,
+  AssetType.Workflow
+]);
 
 /**
  * Build type-group descriptors from a flat list of assets.
@@ -296,20 +325,23 @@ function buildTypeGroups(
     const hasAssets = typeAssets && typeAssets.length > 0;
 
     if (!hasAssets) {
-      // Inject an empty group only for creatable types (Skill/Subagent/Command) when
-      // ensureBaseDir is provided. Never inject an empty Memory group.
-      if (ensureBaseDir && segment) {
+      // Inject an empty group only for the always-shown types (Skill/Subagent/Workflow)
+      // when ensureBaseDir is provided. Commands and Memory are not injected when empty.
+      if (ensureBaseDir && segment && ALWAYS_SHOWN_WHEN_EMPTY.has(type)) {
         const targetDir = path.join(ensureBaseDir, segment);
         const desc: GroupNodeDescriptor = {
           kind: NodeKind.Group,
           assetType: type,
           label: TYPE_LABELS[type]!,
-          children: [],
-          createTargetDir: targetDir
+          children: []
         };
-        // Skill/Subagent: also set dirPath so the lazy fs listing works if the dir exists.
-        if (type === AssetType.Skill || type === AssetType.Subagent) {
-          desc.dirPath = targetDir;
+        // Workflows are read-only: shown even when empty, but never given a create target.
+        if (type !== AssetType.Workflow) {
+          desc.createTargetDir = targetDir;
+          // Skill/Subagent: also set dirPath so the lazy fs listing works if the dir exists.
+          if (type === AssetType.Skill || type === AssetType.Subagent) {
+            desc.dirPath = targetDir;
+          }
         }
         result.push(desc);
       }
@@ -343,7 +375,8 @@ function buildTypeGroups(
       label: TYPE_LABELS[type]!,
       children: sorted.map(buildAssetNode)
     };
-    if (segment) {
+    // Workflows are read-only -- no create target even though they have a segment dir.
+    if (segment && type !== AssetType.Workflow) {
       const targetDir = deriveSegmentRoot(sorted[0].filePath, segment);
       if (targetDir) {
         desc.createTargetDir = targetDir;

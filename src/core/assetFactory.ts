@@ -49,6 +49,14 @@ export function recognizeAssetType(filePath: string): AssetType | undefined {
     return AssetType.Command;
   }
 
+  // Workflow files: JavaScript scripts under a workflows/ dir (saved dynamic workflows).
+  if (
+    normalizedPath.includes('/workflows/') &&
+    (basename.endsWith('.js') || basename.endsWith('.mjs') || basename.endsWith('.cjs'))
+  ) {
+    return AssetType.Workflow;
+  }
+
   return undefined;
 }
 
@@ -80,6 +88,15 @@ export function deriveAssetName(filePath: string, type: AssetType): string {
         return relative.replace(/\.md$/, '');
       }
       return path.basename(filePath, '.md');
+    }
+    case AssetType.Workflow: {
+      // workflows/<sub/path/name>.js -> namespaced name = subpath without extension
+      const workflowsIdx = normalizedPath.lastIndexOf('/workflows/');
+      if (workflowsIdx !== -1) {
+        const relative = normalizedPath.slice(workflowsIdx + '/workflows/'.length);
+        return relative.replace(/\.(js|mjs|cjs)$/, '');
+      }
+      return path.basename(filePath).replace(/\.(js|mjs|cjs)$/, '');
     }
     case AssetType.ClaudeMd: {
       return 'CLAUDE.md';

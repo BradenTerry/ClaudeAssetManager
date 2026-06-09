@@ -2,6 +2,7 @@ export enum AssetType {
   Skill = 'Skill',
   Subagent = 'Subagent',
   Command = 'Command',
+  Workflow = 'Workflow',
   ClaudeMd = 'ClaudeMd',
   Memory = 'Memory',
   Config = 'Config'

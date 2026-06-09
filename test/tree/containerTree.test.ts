@@ -2328,12 +2328,11 @@ describe('buildTreeNodes -- AC7: empty global type groups when globalClaudeDir i
     assert.strictEqual(agentGroup!.createTargetDir, path.join(globalClaudeDir, 'agents'), 'createTargetDir should be <globalClaudeDir>/agents');
   });
 
-  it('Global children include Command group (empty, createTargetDir set)', () => {
+  it('No Command group is injected into Global when no command assets exist', () => {
     const nodes = buildTreeNodes([], { installedPlugins: new Map(), outdated: new Set(), globalClaudeDir } as PluginMetadataOptions);
     const global = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global')!;
-    const cmdGroup = global.children.find(c => c.kind === NodeKind.Group && (c as GroupNodeDescriptor).assetType === AssetType.Command) as GroupNodeDescriptor | undefined;
-    assert.ok(cmdGroup, 'Command group should be present in Global');
-    assert.strictEqual(cmdGroup!.createTargetDir, path.join(globalClaudeDir, 'commands'), 'createTargetDir should be <globalClaudeDir>/commands');
+    const cmdGroup = global.children.find(c => c.kind === NodeKind.Group && (c as GroupNodeDescriptor).assetType === AssetType.Command);
+    assert.strictEqual(cmdGroup, undefined, 'empty commands folder should be hidden, not shown as a placeholder');
   });
 
   it('No Memory group is injected into Global when no memory assets exist', () => {
@@ -2343,14 +2342,23 @@ describe('buildTreeNodes -- AC7: empty global type groups when globalClaudeDir i
     assert.strictEqual(memoryGroup, undefined, 'No empty Memory group should be injected');
   });
 
-  it('Canonical order: Skill before Subagent before Command in empty Global groups', () => {
+  it('Canonical order in empty Global groups: Skill, Subagent, Workflow (Command hidden when empty)', () => {
     const nodes = buildTreeNodes([], { installedPlugins: new Map(), outdated: new Set(), globalClaudeDir } as PluginMetadataOptions);
     const global = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global')!;
     const groups = global.children.filter(c => c.kind === NodeKind.Group) as GroupNodeDescriptor[];
-    assert.strictEqual(groups.length, 3, 'expected exactly 3 groups (Skill, Subagent, Command)');
+    assert.strictEqual(groups.length, 3, 'expected 3 groups (Skill, Subagent, Workflow); empty Command is hidden');
     assert.strictEqual(groups[0].assetType, AssetType.Skill, 'first group should be Skill');
     assert.strictEqual(groups[1].assetType, AssetType.Subagent, 'second group should be Subagent');
-    assert.strictEqual(groups[2].assetType, AssetType.Command, 'third group should be Command');
+    assert.strictEqual(groups[2].assetType, AssetType.Workflow, 'third group should be Workflow');
+  });
+
+  it('Global children include Workflow group (empty, read-only, no createTargetDir)', () => {
+    const nodes = buildTreeNodes([], { installedPlugins: new Map(), outdated: new Set(), globalClaudeDir } as PluginMetadataOptions);
+    const global = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global')!;
+    const wfGroup = global.children.find(c => c.kind === NodeKind.Group && (c as GroupNodeDescriptor).assetType === AssetType.Workflow) as GroupNodeDescriptor | undefined;
+    assert.ok(wfGroup, 'Workflow group should be present in Global even when empty');
+    assert.strictEqual(wfGroup!.children.length, 0, 'Workflow group should have no children');
+    assert.strictEqual(wfGroup!.createTargetDir, undefined, 'Workflow group is read-only: no createTargetDir');
   });
 
   it('Global does NOT render without globalClaudeDir when no global assets', () => {
@@ -2389,12 +2397,11 @@ describe('buildTreeNodes -- AC8: empty WD type groups when projectClaudeDir is s
     assert.strictEqual(agentGroup!.createTargetDir, path.join(projectClaudeDir, 'agents'));
   });
 
-  it('WD flat root contains Command group with createTargetDir = <projectClaudeDir>/commands', () => {
+  it('WD flat root hides the Command group when no command assets exist', () => {
     const nodes = buildTreeNodes([], { installedPlugins: new Map(), outdated: new Set(), projectClaudeDir } as PluginMetadataOptions);
     const wd = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'working-directory')!;
-    const cmdGroup = wd.children.find(c => c.kind === NodeKind.Group && (c as GroupNodeDescriptor).assetType === AssetType.Command) as GroupNodeDescriptor | undefined;
-    assert.ok(cmdGroup, 'Command group should appear in WD flat root area');
-    assert.strictEqual(cmdGroup!.createTargetDir, path.join(projectClaudeDir, 'commands'));
+    const cmdGroup = wd.children.find(c => c.kind === NodeKind.Group && (c as GroupNodeDescriptor).assetType === AssetType.Command);
+    assert.strictEqual(cmdGroup, undefined, 'empty commands folder should be hidden in WD');
   });
 });
 
@@ -2446,14 +2453,17 @@ describe('buildTreeNodes -- AC9: non-empty groups carry createTargetDir', () => 
 // ---------------------------------------------------------------------------
 
 describe('buildTreeNodes -- AC10: GroupNodeDescriptor.createTargetDir present on descriptor', () => {
-  it('descriptor createTargetDir is present on all three injected empty global groups', () => {
+  it('descriptor createTargetDir is present on the creatable injected empty global groups', () => {
     const globalClaudeDir = '/home/user/.claude';
     const nodes = buildTreeNodes([], { installedPlugins: new Map(), outdated: new Set(), globalClaudeDir } as PluginMetadataOptions);
     const global = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global')!;
     const groups = global.children.filter(c => c.kind === NodeKind.Group) as GroupNodeDescriptor[];
-    for (const g of groups) {
+    // Skill/Subagent/Command are creatable; Workflow is read-only and intentionally has none.
+    for (const g of groups.filter(g => g.assetType !== AssetType.Workflow)) {
       assert.ok(g.createTargetDir !== undefined, `Group ${g.assetType} should have createTargetDir on descriptor`);
     }
+    const wf = groups.find(g => g.assetType === AssetType.Workflow)!;
+    assert.strictEqual(wf.createTargetDir, undefined, 'Workflow group should be read-only (no createTargetDir)');
   });
 });
 

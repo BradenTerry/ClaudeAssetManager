@@ -13,6 +13,7 @@ import { openPluginManager, PluginManagerDeps } from './webview/pluginManager';
 import { AssetTreeProvider } from './tree/assetTreeProvider';
 import { AssetNode, PluginFolderNode, ContainerNode, GroupNode } from './tree/nodes';
 import { isValidAssetName, createAsset } from './core/assetCreation';
+import { getSectionInfoByContextValue } from './core/sectionInfo';
 import { AssetType } from './core/types';
 import { watchRoots } from './services/watcher';
 import {
@@ -928,6 +929,22 @@ export function activate(context: vscode.ExtensionContext): void {
 
     vscode.commands.registerCommand('claudeAssets.createCommand', async (node?: GroupNode) => {
       await handleCreate(AssetType.Command, node, 'Command');
+    }),
+
+    vscode.commands.registerCommand('claudeAssets.showSectionInfo', async (node?: { contextValue?: unknown }) => {
+      const contextValue = typeof node?.contextValue === 'string' ? node.contextValue : undefined;
+      const info = getSectionInfoByContextValue(contextValue);
+      if (!info) {
+        return;
+      }
+      const choice = await vscode.window.showInformationMessage(
+        info.title,
+        { modal: true, detail: info.summary },
+        'Open Docs'
+      );
+      if (choice === 'Open Docs') {
+        await vscode.env.openExternal(vscode.Uri.parse(info.docUrl));
+      }
     })
   );
 

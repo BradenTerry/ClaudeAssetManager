@@ -11,7 +11,9 @@ import { findProjectClaudeDir } from './core/findProjectClaudeDir';
 import { buildMarketplacePluginRows, pageMarketplaceRows } from './core/marketplacePluginView';
 import { openPluginManager, PluginManagerDeps } from './webview/pluginManager';
 import { AssetTreeProvider } from './tree/assetTreeProvider';
-import { AssetNode, PluginFolderNode, ContainerNode } from './tree/nodes';
+import { AssetNode, PluginFolderNode, ContainerNode, GroupNode } from './tree/nodes';
+import { isValidAssetName, createAsset } from './core/assetCreation';
+import { AssetType } from './core/types';
 import { watchRoots } from './services/watcher';
 import {
   getDirectories,
@@ -359,7 +361,7 @@ export function activate(context: vscode.ExtensionContext): void {
       ? readEnabledPlugins(path.join(currentProjectDir, '.claude', 'settings.local.json'))
       : new Map();
 
-    const meta = { installedPlugins, outdated, enabled: enabledMap, marketplaces, projectTeamEnabled: currentTeamEnabled, projectLocalEnabled: currentLocalEnabled, projectClaudeDir };
+    const meta = { installedPlugins, outdated, enabled: enabledMap, marketplaces, projectTeamEnabled: currentTeamEnabled, projectLocalEnabled: currentLocalEnabled, projectClaudeDir, globalClaudeDir: homeClaudeDir };
     globalProvider.update(assets, meta);
     workingDirProvider.update(assets, meta);
 
@@ -511,6 +513,41 @@ export function activate(context: vscode.ExtensionContext): void {
       await vscode.commands.executeCommand('claudeAssets.removeMarketplace', { label: marketplace });
     }
   };
+
+  // Shared helper: prompts for a name, creates the asset file, re-scans, then opens it.
+  async function handleCreate(type: AssetType, node: GroupNode | undefined, label: string): Promise<void> {
+    const targetDir = node?.createTargetDir;
+    if (!targetDir) {
+      vscode.window.showErrorMessage(`Could not determine target directory for new ${label}.`);
+      return;
+    }
+    // Refuse to create inside the Claude-managed plugins tree (mirrors the delete guard).
+    const pluginsRoot = path.join(homeClaudeDir, 'plugins');
+    if (targetDir === pluginsRoot || targetDir.startsWith(pluginsRoot + path.sep)) {
+      vscode.window.showInformationMessage(
+        'Plugin files are managed by Claude. Use the Plugin Manager to install plugins instead.'
+      );
+      return;
+    }
+    const name = await vscode.window.showInputBox({
+      title: `New ${label}`,
+      prompt: `Enter a name for the new ${label.toLowerCase()} (letters, digits, dash, underscore).`,
+      ignoreFocusOut: true,
+      validateInput: v => (isValidAssetName(v ?? '') ? undefined : 'Use letters, digits, dash, underscore; no slashes or leading dot.')
+    });
+    if (!name) return;
+    let filePath: string;
+    try {
+      filePath = createAsset(type, targetDir, name);
+    } catch (err) {
+      vscode.window.showErrorMessage(`Could not create ${label}: ${err}`);
+      return;
+    }
+    await runScan();
+    vscode.commands.executeCommand('claudeAssets.openMarkdown', filePath).then(undefined, (err: unknown) => {
+      vscode.window.showErrorMessage(`Could not open ${label} file: ${err}`);
+    });
+  }
 
   // Commands
   context.subscriptions.push(
@@ -879,6 +916,18 @@ export function activate(context: vscode.ExtensionContext): void {
       if (e.affectsConfiguration('claudeAssets')) {
         runScan().catch(() => { /* ignore */ });
       }
+    }),
+
+    vscode.commands.registerCommand('claudeAssets.createSkill', async (node?: GroupNode) => {
+      await handleCreate(AssetType.Skill, node, 'Skill');
+    }),
+
+    vscode.commands.registerCommand('claudeAssets.createAgent', async (node?: GroupNode) => {
+      await handleCreate(AssetType.Subagent, node, 'Agent');
+    }),
+
+    vscode.commands.registerCommand('claudeAssets.createCommand', async (node?: GroupNode) => {
+      await handleCreate(AssetType.Command, node, 'Command');
     })
   );
 

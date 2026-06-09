@@ -169,6 +169,24 @@
         "title": "Manage Plugins",
         "icon": "$(gear)",
         "category": "Claude Asset Manager"
+      },
+      {
+        "command": "claudeAssets.createSkill",
+        "title": "New Skill",
+        "icon": "$(add)",
+        "category": "Claude Asset Manager"
+      },
+      {
+        "command": "claudeAssets.createAgent",
+        "title": "New Agent",
+        "icon": "$(add)",
+        "category": "Claude Asset Manager"
+      },
+      {
+        "command": "claudeAssets.createCommand",
+        "title": "New Command",
+        "icon": "$(add)",
+        "category": "Claude Asset Manager"
       }
     ],
     "menus": {
@@ -294,6 +312,36 @@
           "command": "claudeAssets.deleteFile",
           "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config)-(global|project|registered)/ || viewItem == fsFile || viewItem == fsFileMd || viewItem == fsDir || viewItem == assetProjectFolder)",
           "group": "zzz_delete"
+        },
+        {
+          "command": "claudeAssets.createSkill",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem == assetGroupSkills",
+          "group": "inline"
+        },
+        {
+          "command": "claudeAssets.createSkill",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem == assetGroupSkills",
+          "group": "create"
+        },
+        {
+          "command": "claudeAssets.createAgent",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem == assetGroupAgents",
+          "group": "inline"
+        },
+        {
+          "command": "claudeAssets.createAgent",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem == assetGroupAgents",
+          "group": "create"
+        },
+        {
+          "command": "claudeAssets.createCommand",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem == assetGroupCommands",
+          "group": "inline"
+        },
+        {
+          "command": "claudeAssets.createCommand",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem == assetGroupCommands",
+          "group": "create"
         }
       ]
     },

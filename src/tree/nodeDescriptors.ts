@@ -92,6 +92,8 @@ export interface PluginMetadataOptions {
   projectLocalEnabled?: Map<string, boolean>;
   /** Absolute path to the working-directory's .claude folder, used as dirPath for the project plugins root. */
   projectClaudeDir?: string;
+  /** Absolute path to the global ~/.claude folder; when set, always-visible Skill/Subagent/Command groups are injected. */
+  globalClaudeDir?: string;
 }
 
 export interface GroupNodeDescriptor {
@@ -105,6 +107,11 @@ export interface GroupNodeDescriptor {
    * Skills (the skills/ root) and Agents (the agents/ root).
    */
   dirPath?: string;
+  /**
+   * The segment directory where new assets of this type should be created
+   * (e.g. ~/.claude/skills). Set on Skill/Subagent/Command groups.
+   */
+  createTargetDir?: string;
 }
 
 export interface AssetNodeDescriptor {
@@ -129,7 +136,8 @@ export type TopLevelNode = ContainerNodeDescriptor;
 // ---------------------------------------------------------------------------
 
 function buildProjectChildren(
-  assets: ClaudeAsset[]
+  assets: ClaudeAsset[],
+  ensureBaseDir?: string
 ): (AssetNodeDescriptor | GroupNodeDescriptor | WorktreesFolderNodeDescriptor)[] {
   const mainAssets: ClaudeAsset[] = [];
   const worktreeMap = new Map<string, ClaudeAsset[]>();
@@ -150,8 +158,8 @@ function buildProjectChildren(
 
   const children: (AssetNodeDescriptor | GroupNodeDescriptor | WorktreesFolderNodeDescriptor)[] = [];
 
-  // Main type groups (and flat leaves) first
-  children.push(...buildTypeGroups(mainAssets));
+  // Main type groups (and flat leaves) first; forward ensureBaseDir only to the main call.
+  children.push(...buildTypeGroups(mainAssets, ensureBaseDir));
 
   // Worktrees folder last (only when any worktree assets exist)
   if (worktreeMap.size > 0) {
@@ -240,7 +248,24 @@ const GROUPED_TYPE_ORDER: AssetType[] = [
   AssetType.Memory
 ];
 
-function buildTypeGroups(assets: ClaudeAsset[]): (AssetNodeDescriptor | GroupNodeDescriptor)[] {
+/** Maps creatable asset types to their on-disk segment directory name. */
+const TYPE_SEGMENTS: Partial<Record<AssetType, string>> = {
+  [AssetType.Skill]: 'skills',
+  [AssetType.Subagent]: 'agents',
+  [AssetType.Command]: 'commands'
+};
+
+/**
+ * Build type-group descriptors from a flat list of assets.
+ *
+ * When `ensureBaseDir` is set, Skill/Subagent/Command groups are always emitted
+ * (even when empty) with `createTargetDir = path.join(ensureBaseDir, segment)`.
+ * Memory is never injected as an empty group.
+ */
+function buildTypeGroups(
+  assets: ClaudeAsset[],
+  ensureBaseDir?: string
+): (AssetNodeDescriptor | GroupNodeDescriptor)[] {
   const byType = new Map<AssetType, ClaudeAsset[]>();
   for (const asset of assets) {
     const bucket = byType.get(asset.type);
@@ -266,33 +291,65 @@ function buildTypeGroups(assets: ClaudeAsset[]): (AssetNodeDescriptor | GroupNod
 
   // 2. Grouped types: Skill, Subagent, Command, Memory
   for (const type of GROUPED_TYPE_ORDER) {
+    const segment = TYPE_SEGMENTS[type];
     const typeAssets = byType.get(type);
-    if (!typeAssets || typeAssets.length === 0) continue;
-    const sorted = [...typeAssets].sort((a, b) => a.name.localeCompare(b.name));
+    const hasAssets = typeAssets && typeAssets.length > 0;
+
+    if (!hasAssets) {
+      // Inject an empty group only for creatable types (Skill/Subagent/Command) when
+      // ensureBaseDir is provided. Never inject an empty Memory group.
+      if (ensureBaseDir && segment) {
+        const targetDir = path.join(ensureBaseDir, segment);
+        const desc: GroupNodeDescriptor = {
+          kind: NodeKind.Group,
+          assetType: type,
+          label: TYPE_LABELS[type]!,
+          children: [],
+          createTargetDir: targetDir
+        };
+        // Skill/Subagent: also set dirPath so the lazy fs listing works if the dir exists.
+        if (type === AssetType.Skill || type === AssetType.Subagent) {
+          desc.dirPath = targetDir;
+        }
+        result.push(desc);
+      }
+      continue;
+    }
+
+    const sorted = [...typeAssets!].sort((a, b) => a.name.localeCompare(b.name));
 
     // Skills and Agents mirror their backing directory (skills/ or agents/) so
     // every file and subdirectory shows, not just the recognized asset files.
     if (type === AssetType.Skill || type === AssetType.Subagent) {
-      const segment = type === AssetType.Skill ? 'skills' : 'agents';
-      const dirPath = deriveSegmentRoot(sorted[0].filePath, segment);
+      const dirPath = deriveSegmentRoot(sorted[0].filePath, segment!);
       if (dirPath) {
         result.push({
           kind: NodeKind.Group,
           assetType: type,
           label: TYPE_LABELS[type]!,
           children: [],
-          dirPath
+          dirPath,
+          createTargetDir: dirPath
         });
         continue;
       }
     }
 
-    result.push({
+    // Command and Memory (with assets): static children list.
+    // For Command, also set createTargetDir from the asset path.
+    const desc: GroupNodeDescriptor = {
       kind: NodeKind.Group,
       assetType: type,
       label: TYPE_LABELS[type]!,
       children: sorted.map(buildAssetNode)
-    });
+    };
+    if (segment) {
+      const targetDir = deriveSegmentRoot(sorted[0].filePath, segment);
+      if (targetDir) {
+        desc.createTargetDir = targetDir;
+      }
+    }
+    result.push(desc);
   }
 
   return result;
@@ -542,6 +599,8 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
     (pluginMeta && (pluginMeta as Partial<PluginMetadataOptions>).projectLocalEnabled) ? pluginMeta.projectLocalEnabled! : new Map();
   const projectClaudeDir: string | undefined =
     (pluginMeta && (pluginMeta as Partial<PluginMetadataOptions>).projectClaudeDir) ? pluginMeta.projectClaudeDir : undefined;
+  const globalClaudeDir: string | undefined =
+    (pluginMeta && (pluginMeta as Partial<PluginMetadataOptions>).globalClaudeDir) ? pluginMeta.globalClaudeDir : undefined;
 
   // Partition by scope
   const globalAssets: ClaudeAsset[] = [];
@@ -712,15 +771,15 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
     };
   }
 
-  // 1. Global container -- appears when global assets OR plugin assets exist.
+  // 1. Global container -- appears when global assets, plugin assets, or globalClaudeDir is set.
   //    Memory assets (~/.claude/projects/<project>/memory) are grouped under a nested
   //    "Projects" folder; the Plugins folder is appended last.
-  if (globalAssets.length > 0 || pluginsFolderNode !== undefined) {
+  if (globalAssets.length > 0 || pluginsFolderNode !== undefined || !!globalClaudeDir) {
     const memoryAssets = globalAssets.filter(a => a.type === AssetType.Memory);
     const nonMemoryGlobal = globalAssets.filter(a => a.type !== AssetType.Memory);
 
     const globalChildren: ContainerNodeDescriptor['children'] = [
-      ...buildTypeGroups(nonMemoryGlobal)
+      ...buildTypeGroups(nonMemoryGlobal, globalClaudeDir)
     ];
 
     const projectsFolderNode = buildMemoryProjectsFolder(memoryAssets);
@@ -744,12 +803,17 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
 
   const projectPluginsFolder = buildProjectPluginsFolder(installedPlugins, projectTeamEnabled, projectLocalEnabled, outdatedPlugins, projectClaudeDir);
 
-  if (sortedProjects.length > 0 || workingRootAssets.length > 0 || projectPluginsFolder !== undefined) {
+  // ensureWdBase: when set, always-visible Skill/Subagent/Command groups are injected into
+  // the WD flat root area (the active project's main .claude folder).
+  const ensureWdBase = projectClaudeDir;
+
+  if (sortedProjects.length > 0 || workingRootAssets.length > 0 || projectPluginsFolder !== undefined || !!ensureWdBase) {
     const wdChildren: ContainerNodeDescriptor['children'] = [];
 
-    // Root-level assets (e.g. the working dir's own .claude/settings.local.json) flat first
-    if (workingRootAssets.length > 0) {
-      wdChildren.push(...buildProjectChildren(workingRootAssets));
+    // Root-level assets (e.g. the working dir's own .claude/settings.local.json) flat first.
+    // When ensureWdBase is set, also inject empty type groups even with no WD assets.
+    if (workingRootAssets.length > 0 || ensureWdBase) {
+      wdChildren.push(...buildProjectChildren(workingRootAssets, ensureWdBase));
     }
 
     // Sub-projects as folders

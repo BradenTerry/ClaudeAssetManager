@@ -98,13 +98,31 @@ export class GroupNode extends vscode.TreeItem {
   readonly assetType: AssetType;
   /** When set, children are listed lazily from this real directory (Skills, Agents). */
   readonly dirPath: string | undefined;
+  /** The segment directory where new assets of this type should be created. */
+  readonly createTargetDir: string | undefined;
 
   constructor(desc: GroupNodeDescriptor) {
     super(desc.label, vscode.TreeItemCollapsibleState.Collapsed);
     this.assetType = desc.assetType;
     this.dirPath = desc.dirPath;
+    this.createTargetDir = desc.createTargetDir;
     this.children = desc.children.map(c => new AssetNode(c));
-    this.contextValue = 'assetGroup';
+    switch (desc.assetType) {
+      case AssetType.Skill:
+        this.contextValue = 'assetGroupSkills';
+        break;
+      case AssetType.Subagent:
+        this.contextValue = 'assetGroupAgents';
+        break;
+      case AssetType.Command:
+        this.contextValue = 'assetGroupCommands';
+        break;
+      case AssetType.Memory:
+        this.contextValue = 'assetGroupMemory';
+        break;
+      default:
+        this.contextValue = 'assetGroup';
+    }
   }
 }
 

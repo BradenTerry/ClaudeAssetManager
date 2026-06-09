@@ -187,6 +187,12 @@
         "title": "New Command",
         "icon": "$(add)",
         "category": "Claude Asset Manager"
+      },
+      {
+        "command": "claudeAssets.showSectionInfo",
+        "title": "What is this?",
+        "icon": "$(info)",
+        "category": "Claude Asset Manager"
       }
     ],
     "menus": {
@@ -200,7 +206,7 @@
       "view/item/context": [
         {
           "command": "claudeAssets.openFile",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config)-/ || viewItem =~ /^fsFile/)",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config|workflow)-/ || viewItem =~ /^fsFile/)",
           "group": "open"
         },
         {
@@ -210,7 +216,7 @@
         },
         {
           "command": "claudeAssets.revealInOS",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config)-/ || viewItem =~ /^fs(Dir|File)/ || viewItem == assetPluginsRoot || viewItem == assetPluginsRootOutdated || viewItem == assetProjectsRoot || viewItem == assetProjectFolder || viewItem == assetMarketplace || viewItem == assetMarketplaceOutdated || viewItem == assetProjectPluginsRoot || viewItem == assetProjectMarketplace)",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config|workflow)-/ || viewItem =~ /^fs(Dir|File)/ || viewItem == assetPluginsRoot || viewItem == assetPluginsRootOutdated || viewItem == assetProjectsRoot || viewItem == assetProjectFolder || viewItem == assetMarketplace || viewItem == assetMarketplaceOutdated || viewItem == assetProjectPluginsRoot || viewItem == assetProjectMarketplace)",
           "group": "reveal"
         },
         {
@@ -310,7 +316,7 @@
         },
         {
           "command": "claudeAssets.deleteFile",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config)-(global|project|registered)/ || viewItem == fsFile || viewItem == fsFileMd || viewItem == fsDir || viewItem == assetProjectFolder)",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config|workflow)-(global|project|registered)/ || viewItem == fsFile || viewItem == fsFileMd || viewItem == fsDir || viewItem == assetProjectFolder)",
           "group": "zzz_delete"
         },
         {
@@ -342,6 +348,16 @@
           "command": "claudeAssets.createCommand",
           "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem == assetGroupCommands",
           "group": "create"
+        },
+        {
+          "command": "claudeAssets.showSectionInfo",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem == assetGroupSkills || viewItem == assetGroupAgents || viewItem == assetGroupCommands || viewItem == assetGroupWorkflows || viewItem == assetGroupMemory || viewItem =~ /^assetPluginsRoot/ || viewItem == assetProjectPluginsRoot)",
+          "group": "inline@9"
+        },
+        {
+          "command": "claudeAssets.showSectionInfo",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem == assetGroupSkills || viewItem == assetGroupAgents || viewItem == assetGroupCommands || viewItem == assetGroupWorkflows || viewItem == assetGroupMemory || viewItem =~ /^assetPluginsRoot/ || viewItem == assetProjectPluginsRoot)",
+          "group": "info"
         }
       ]
     },

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { AssetType, AssetScope, ClaudeAsset } from '../core/types';
+import { getSectionInfoByAssetType } from '../core/sectionInfo';
 import {
   NodeKind,
   ContainerNodeDescriptor,
@@ -117,11 +118,20 @@ export class GroupNode extends vscode.TreeItem {
       case AssetType.Command:
         this.contextValue = 'assetGroupCommands';
         break;
+      case AssetType.Workflow:
+        this.contextValue = 'assetGroupWorkflows';
+        break;
       case AssetType.Memory:
         this.contextValue = 'assetGroupMemory';
         break;
       default:
         this.contextValue = 'assetGroup';
+    }
+    const info = getSectionInfoByAssetType(desc.assetType);
+    if (info) {
+      const md = new vscode.MarkdownString(`**${info.title}** — ${info.summary}\n\n[Learn more](${info.docUrl})`);
+      md.isTrusted = true;
+      this.tooltip = md;
     }
   }
 }

@@ -144,6 +144,46 @@ describe('Scanner -- AC3: Commands including namespaced subdirs', () => {
   });
 });
 
+describe('Scanner -- Workflows (read-only JS scripts under workflows/)', () => {
+  let cleanup: () => void;
+  let root: string;
+
+  beforeEach(() => {
+    const tmp = makeTempDir();
+    root = tmp.root;
+    cleanup = tmp.cleanup;
+  });
+
+  afterEach(() => cleanup());
+
+  it('returns a Workflow asset for a .js script with simple name', () => {
+    const claudeDir = path.join(root, '.claude');
+    buildGlobalClaudeDir(claudeDir);
+    writeFile(path.join(claudeDir, 'workflows', 'review-changes.js'), `export const meta = { name: 'review-changes', description: 'x' }\n`);
+
+    const roots = buildScanRoots(claudeDir, [], []);
+    const assets = scan(roots, { excludeDirs: DEFAULT_EXCLUDE, followSymlinks: true });
+
+    const wfs = assets.filter(a => a.type === AssetType.Workflow);
+    assert.strictEqual(wfs.length, 1, 'expected one workflow');
+    assert.strictEqual(wfs[0].name, 'review-changes');
+    assert.strictEqual(wfs[0].scope, AssetScope.Global);
+  });
+
+  it('namespaces workflows in subdirectories and ignores non-script files', () => {
+    const claudeDir = path.join(root, '.claude');
+    buildGlobalClaudeDir(claudeDir);
+    writeFile(path.join(claudeDir, 'workflows', 'team', 'audit.mjs'), `export const meta = {}\n`);
+    writeFile(path.join(claudeDir, 'workflows', 'README.md'), `# workflows\n`);
+
+    const roots = buildScanRoots(claudeDir, [], []);
+    const assets = scan(roots, { excludeDirs: DEFAULT_EXCLUDE, followSymlinks: true });
+
+    const wfs = assets.filter(a => a.type === AssetType.Workflow);
+    assert.deepStrictEqual(wfs.map(w => w.name), ['team/audit']);
+  });
+});
+
 describe('Scanner -- AC4: CLAUDE.md and Memory assets', () => {
   let cleanup: () => void;
   let root: string;

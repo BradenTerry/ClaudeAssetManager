@@ -141,6 +141,35 @@ describe('Tree node descriptors -- AC14: asset node fields', () => {
   });
 });
 
+describe('Tree node descriptors -- Workflows (read-only)', () => {
+  it('builds a workflows group with workflow-format leaves opened in the editor', () => {
+    const filePath = '/home/user/.claude/workflows/review.js';
+    const asset = makeAsset(AssetType.Workflow, 'review', filePath, AssetScope.Global);
+
+    const nodes = buildTreeNodes([asset]);
+    const group = getGlobalGroups(nodes).find(g => g.assetType === AssetType.Workflow)!;
+    assert.ok(group, 'expected a workflows group');
+    assert.strictEqual(group.label, 'workflows');
+    // Read-only: no create target directory is wired for workflows.
+    assert.strictEqual(group.createTargetDir, undefined, 'workflows group should not be creatable');
+
+    const leaf = group.children[0] as AssetNodeDescriptor;
+    assert.strictEqual(leaf.contextValue, 'asset-workflow-global');
+    assert.strictEqual(leaf.commandId, 'claudeAssets.openFile', 'workflow scripts open in the plain editor');
+  });
+
+  it('shows an empty, read-only workflows group when ensureBaseDir is set and no workflows exist', () => {
+    const skill = makeAsset(AssetType.Skill, 'skill-a', '/home/user/.claude/skills/skill-a/SKILL.md');
+    const nodes = buildTreeNodes([skill], { globalClaudeDir: '/home/user/.claude' } as any);
+    const group = getGlobalGroups(nodes).find(g => g.assetType === AssetType.Workflow);
+    assert.ok(group, 'workflows group should be injected even when the folder is empty/absent');
+    assert.strictEqual(group!.label, 'workflows');
+    assert.strictEqual(group!.children.length, 0);
+    assert.strictEqual(group!.createTargetDir, undefined, 'workflows stay read-only');
+    assert.strictEqual(group!.dirPath, undefined, 'empty workflows group has no lazy dir backing');
+  });
+});
+
 describe('Tree node descriptors -- default click command', () => {
   it('markdown asset descriptor has commandId claudeAssets.openMarkdown', () => {
     const filePath = '/home/user/.claude/commands/my-cmd.md';

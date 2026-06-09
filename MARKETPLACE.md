@@ -20,14 +20,14 @@ applies to your current workspace:
 - One folder per sub-project, each with its own CLAUDE.md, config, and asset groups.
 - Git worktrees grouped under a **Worktrees** folder so they do not duplicate a project's assets.
 
-In other words, the whole set of skills, agents, commands, memory, and config Claude can pull
+In other words, the whole set of skills, agents, commands, workflows, memory, and config Claude can pull
 into a session for the directory you are working in, laid out in one place.
 
 ### Global
 
 Your machine-wide `~/.claude` assets:
 
-- CLAUDE.md and config files first, then **Skills**, **Subagents**, and **Commands**.
+- CLAUDE.md and config files first, then **Skills**, **Subagents**, **Commands**, and **Workflows**.
 - A **Projects** folder holding per-project memory.
 - A **Plugins** folder listing every installed plugin, nested under its source marketplace with
   its version, and an `N Updates available` indicator when a newer version exists in your local

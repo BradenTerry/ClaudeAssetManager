@@ -34,14 +34,14 @@ applies to your current workspace:
   nothing installed yet (shown as `(no plugins installed)`), so you can open **Manage Plugins**
   to add the first one.
 
-In other words, the whole set of skills, agents, commands, memory, and config Claude can pull
+In other words, the whole set of skills, agents, commands, workflows, memory, and config Claude can pull
 into a session for the directory you are working in, laid out in one place.
 
 ### Global
 
 Your machine-wide `~/.claude` assets:
 
-- CLAUDE.md and config files first, then **Skills**, **Subagents**, and **Commands**.
+- CLAUDE.md and config files first, then **Skills**, **Subagents**, **Commands**, and **Workflows**.
 - A **Projects** folder holding per-project memory.
 - A **Plugins** folder listing your user-scope (machine-wide) installs, nested under their source
   marketplace with their version, and an `N Updates available` indicator when a newer version exists in your local

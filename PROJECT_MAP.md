@@ -4,7 +4,8 @@ A native VSCode extension that discovers and browses every Claude Code asset on 
 (skills, subagents, slash commands, memory/CLAUDE.md, and `.claude` JSON config) in two
 collapsible sidebar sections: **Global** and a **Working Directory** section titled after the
 open folder (e.g. `Projects (WD)`). Markdown opens in the rendered preview on click; config
-opens in the editor. The extension is read-and-open only (it does not create assets).
+opens in the editor. Beyond read-and-open, the extension can create new skills, subagents, and
+slash commands from the tree (inline `+` / right-click on a type-group folder).
 
 ## Stack
 - TypeScript (strict), compiled with tsc to CommonJS in `out/` (`main` = `out/extension.js`).
@@ -27,14 +28,28 @@ opens in the editor. The extension is read-and-open only (it does not create ass
     subtree unlimited. Special roots (global/plugins/memory, or a root named `.claude`) start inside.
     `maxDepth` is optional (undefined = unlimited), so omitting it preserves old behavior.
   - `assetFactory.ts` -- `recognizeAssetType` + `buildAsset`; parses `tools`/`allowed-tools`.
+  - `assetCreation.ts` -- vscode-free asset scaffolding. `isValidAssetName` (rejects empty, path
+    separators, `..`, leading dot; pattern `^[A-Za-z0-9][A-Za-z0-9._-]*$`), `assetTemplate(type,
+    name)` (frontmatter + skeleton per type; throws for unsupported types), `newAssetRelativePath`
+    (Skill -> `<name>/SKILL.md`, Subagent/Command -> `<name>.md`), and `createAsset(type,
+    segmentDir, name)` (validates, refuses an existing target, `mkdir -p` parent, writes the
+    template, returns the absolute path).
   - `containerDerivations.ts` -- `derivePluginName`, `deriveProjectInfo` ({project, worktree}),
     `deriveMemoryProject`, `isRootLevelAsset`.
   - `pluginMetadata.ts` -- `readInstalledPlugins`, `readCatalogVersions`, `readCatalogPlugins`
     (catalog cache -> available `CatalogPlugin[]` for browsing), `isOutdated`, `readEnabledPlugins`
     (settings.json `enabledPlugins`, id -> bool; disabled only when explicit false),
+    `readProjectEnabledPlugins(settingsPath, settingsLocalPath)` -> `Map<id, ProjectPluginEnablement>`
+    (merges a project's `.claude/settings.json` as scope `project` with `.claude/settings.local.json`
+    as scope `local`; local wins, types `PluginScope` / `ProjectPluginEnablement`),
     `readKnownMarketplaces` (known_marketplaces.json -> all configured marketplaces).
-  - `pluginValidation.ts` -- `isValidPluginId`, `isValidMarketplaceName`, `isSafeMarketplaceSource`;
-    vscode-free guards that sanitize every dynamic arg before it is passed to the `claude` CLI.
+  - `pluginValidation.ts` -- `isValidPluginId`, `isValidMarketplaceName`, `isSafeMarketplaceSource`,
+    `normalizePluginScope` (accepts only `user`/`project`/`local`), `buildScopedPluginArgs(op, id, scope)`
+    -> `['plugin', op, id, '--scope', scope]`; vscode-free guards that sanitize every dynamic arg before
+    it is passed to the `claude` CLI.
+  - `findProjectClaudeDir.ts` -- pure `findProjectClaudeDir(workspaceDirs)` returns the first folder
+    whose `<dir>/.claude` exists as a directory, as `{ projectDir, projectClaudeDir }`, else undefined.
+    Drives both the Working Directory Plugins folder and the cwd for project/local-scoped CLI ops.
   - `frontmatter.ts` -- YAML frontmatter split. (Collision detection was removed as noise.)
 - `src/tree/`
   - `nodeDescriptors.ts` -- pure `buildTreeNodes(assets, pluginMeta?)` returns the nested
@@ -47,10 +62,21 @@ opens in the editor. The extension is read-and-open only (it does not create ass
   (debounced fs.watch over scan roots).
 - `src/extension.ts` -- `activate`: two views, file + plugin commands, watcher; titles the Working
   Directory view after the open folder + ` (WD)`; reads plugin metadata + enabled state each scan
-  (no network). Plugin/marketplace mutations shell out via a `runClaude` helper (`execFile claude`),
-  validating every dynamic arg through `pluginValidation` first.
+  (no network). Plugin/marketplace mutations shell out via a `runClaude(args, title, cwd?)` helper
+  (`execFile claude`), validating every dynamic arg through `pluginValidation` first. Scope-aware
+  ops (enable/disable/install at `user`/`project`/`local`) run with `cwd` = the `.claude`-owning
+  workspace folder (`currentProjectDir`, from `findProjectClaudeDir`) so project/local writes land
+  in the right `.claude`; `user` scope runs cwd-independent. The Plugin Manager webview
+  (`src/webview/pluginManager*.ts`) carries a scope selector whose value flows back through these ops.
 
 ## Tree structure
+- The Skills, Subagents, and Commands type groups are always rendered (even when empty) under
+  Global (driven by `PluginMetadataOptions.globalClaudeDir`) and under the active
+  `.claude`-owning working-directory project (driven by `projectClaudeDir`), so the first asset
+  of a kind can be created. Each carries a `createTargetDir` (its segment dir, `<claude>/skills`
+  etc.) consumed by the create commands. Empty groups are NOT injected into worktrees, memory
+  contexts, sub-projects, or the plugin asset-derived fallback. Group `contextValue` is
+  type-specific: `assetGroupSkills` / `assetGroupAgents` / `assetGroupCommands` / `assetGroupMemory`.
 - **Global** section: flat `CLAUDE.md` + config leaves, then type groups (Skills, Subagents,
   Commands), then a **Projects** folder holding per-project memory (`~/.claude/projects/*/memory`),
   then a **Plugins** folder. Plugins are grouped under their source marketplace (every configured
@@ -60,9 +86,15 @@ opens in the editor. The extension is read-and-open only (it does not create ass
   `X/Y plugins enabled` summary (joined with any updates text via ` · `). Marketplace nodes offer
   Add Plugin (browse catalog), Refresh Source, Remove; the Plugins root offers Add Marketplace.
 - **Working Directory** section: the scan root's own `.claude` assets rendered flat at the top,
-  then one folder per sub-project (sorted alpha). Each project folder: flat `CLAUDE.md`/config
-  leaves, type groups, and a **Worktrees** folder (one sub-folder per git worktree found under
-  `<project>/.claude/worktrees/<name>/`).
+  then one folder per sub-project (sorted alpha), then (last) a **Plugins** folder of project-scoped
+  plugins. Each project folder: flat `CLAUDE.md`/config leaves, type groups, and a **Worktrees**
+  folder (one sub-folder per git worktree found under `<project>/.claude/worktrees/<name>/`). The
+  Working Directory **Plugins** folder is built by `buildProjectPluginsFolder` from
+  `PluginMetadataOptions.projectPlugins`/`projectClaudeDir` (contextValue `assetProjectPluginsRoot`;
+  per-plugin `assetProjectPluginFolder<Enabled|Disabled><Project|Local>`), cross-referencing global
+  installed metadata by full id for version + install dir; the container is emitted even when it is
+  the only working-directory content. It also appears (empty, `(no plugins enabled)`) whenever the
+  open folder has a `.claude` dir, so the Manage Plugins GUI is reachable before anything is enabled.
 
 ## Recognition rules
 - Skill: `**/skills/<name>/SKILL.md`. Subagent: `**/agents/**/*.md`. Command: `**/commands/**/*.md`.
@@ -75,8 +107,13 @@ opens in the editor. The extension is read-and-open only (it does not create ass
 ## Interactions / settings
 - Click markdown asset -> `markdown.showPreview`; click config -> open in editor.
 - Commands: refresh, addDirectory, removeDirectory, openFile, openPreview, revealInOS, deleteFile;
+  createSkill/createAgent/createCommand (icon `$(add)`, inline `+` and right-click on the matching
+  type-group folder -> prompt for a name, `createAsset` under the group's `createTargetDir`,
+  re-scan, then open; creation under `~/.claude/plugins` is refused, mirroring the delete guard);
   plugin: updatePlugin, updateAllPlugins, updateMarketplacePlugins, uninstallPlugin, enablePlugin,
-  disablePlugin, addMarketplace, removeMarketplace, refreshMarketplace, browseMarketplace
+  disablePlugin (both scope-aware: append `--scope <project|local>` from the node when set),
+  disablePluginForMe (forces `claude plugin disable <id> --scope local`),
+  addMarketplace, removeMarketplace, refreshMarketplace, browseMarketplace
   (QuickPick of a source's not-yet-installed catalog plugins -> `claude plugin install`).
 - Settings: `claudeAssets.directories`, `claudeAssets.followSymlinks`, `claudeAssets.excludeDirs`,
   `claudeAssets.maxDepth` (default 6, min 1; search depth for `.claude` dirs, unlimited once inside one),
@@ -89,5 +126,6 @@ opens in the editor. The extension is read-and-open only (it does not create ass
   shows the Global and Working Directory sections.
 
 ## Out of scope (v1)
-Creating/deleting assets, structured MCP/hooks editing, plugin install/update actions, diff/git
-history, network update fetches (update check is local-timestamp only), name-collision detection.
+Creating asset types other than skill/subagent/command, renaming assets, structured MCP/hooks
+editing, diff/git history, network update fetches (update check is local-timestamp only),
+name-collision detection.

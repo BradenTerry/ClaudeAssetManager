@@ -1,4 +1,5 @@
 import * as assert from 'assert';
+import * as path from 'path';
 import { AssetType, AssetScope, ClaudeAsset } from '../../src/core/types';
 import {
   buildTreeNodes,
@@ -2016,7 +2017,13 @@ describe('buildTreeNodes -- project-scoped plugins under Working Directory', () 
     const nodes = buildTreeNodes([], meta);
     const wd = getWorkingDir(nodes);
     assert.ok(wd, 'WD must appear when claudeDir is set even if no installs');
-    assert.strictEqual(wd!.children.length, 1, 'WD should have exactly 1 child: the plugins folder');
+    // projectClaudeDir now also injects empty Skill/Subagent/Command groups, so children
+    // are: Skills group, Agents group, Commands group, plugins folder (4 total).
+    assert.ok(wd!.children.length >= 1, 'WD should have at least the plugins folder as a child');
+    const pluginsChild = wd!.children.find(
+      c => c.kind === NodeKind.Container && (c as ContainerNodeDescriptor).containerKind === 'plugins'
+    );
+    assert.ok(pluginsChild, 'WD should contain a plugins folder child');
   });
 
   // ---------------------------------------------------------------------------
@@ -2288,5 +2295,197 @@ describe('buildTreeNodes -- scope filtering (Global shows only user-scope instal
     assert.ok(projFolder!.description && projFolder!.description.includes('2.0.0'),
       `WD project plugin description should include "2.0.0", got: "${projFolder!.description}"`);
     assert.strictEqual(projFolder!.dirPath, projInstallPath, 'WD project plugin dirPath should use the install path');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC7: Global always-visible empty Skill/Subagent/Command groups
+// ---------------------------------------------------------------------------
+
+describe('buildTreeNodes -- AC7: empty global type groups when globalClaudeDir is set', () => {
+  const globalClaudeDir = '/home/user/.claude';
+
+  it('Global container renders even with zero global assets when globalClaudeDir is set', () => {
+    const nodes = buildTreeNodes([], { installedPlugins: new Map(), outdated: new Set(), globalClaudeDir } as PluginMetadataOptions);
+    const global = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global');
+    assert.ok(global, 'Global container should render when globalClaudeDir is set even with no assets');
+  });
+
+  it('Global children include Skill group (empty, createTargetDir set)', () => {
+    const nodes = buildTreeNodes([], { installedPlugins: new Map(), outdated: new Set(), globalClaudeDir } as PluginMetadataOptions);
+    const global = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global')!;
+    const skillGroup = global.children.find(c => c.kind === NodeKind.Group && (c as GroupNodeDescriptor).assetType === AssetType.Skill) as GroupNodeDescriptor | undefined;
+    assert.ok(skillGroup, 'Skill group should be present in Global');
+    assert.strictEqual(skillGroup!.children.length, 0, 'Skill group should have no children');
+    assert.strictEqual(skillGroup!.createTargetDir, path.join(globalClaudeDir, 'skills'), 'createTargetDir should be <globalClaudeDir>/skills');
+  });
+
+  it('Global children include Subagent group (empty, createTargetDir set)', () => {
+    const nodes = buildTreeNodes([], { installedPlugins: new Map(), outdated: new Set(), globalClaudeDir } as PluginMetadataOptions);
+    const global = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global')!;
+    const agentGroup = global.children.find(c => c.kind === NodeKind.Group && (c as GroupNodeDescriptor).assetType === AssetType.Subagent) as GroupNodeDescriptor | undefined;
+    assert.ok(agentGroup, 'Subagent group should be present in Global');
+    assert.strictEqual(agentGroup!.createTargetDir, path.join(globalClaudeDir, 'agents'), 'createTargetDir should be <globalClaudeDir>/agents');
+  });
+
+  it('Global children include Command group (empty, createTargetDir set)', () => {
+    const nodes = buildTreeNodes([], { installedPlugins: new Map(), outdated: new Set(), globalClaudeDir } as PluginMetadataOptions);
+    const global = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global')!;
+    const cmdGroup = global.children.find(c => c.kind === NodeKind.Group && (c as GroupNodeDescriptor).assetType === AssetType.Command) as GroupNodeDescriptor | undefined;
+    assert.ok(cmdGroup, 'Command group should be present in Global');
+    assert.strictEqual(cmdGroup!.createTargetDir, path.join(globalClaudeDir, 'commands'), 'createTargetDir should be <globalClaudeDir>/commands');
+  });
+
+  it('No Memory group is injected into Global when no memory assets exist', () => {
+    const nodes = buildTreeNodes([], { installedPlugins: new Map(), outdated: new Set(), globalClaudeDir } as PluginMetadataOptions);
+    const global = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global')!;
+    const memoryGroup = global.children.find(c => c.kind === NodeKind.Group && (c as GroupNodeDescriptor).assetType === AssetType.Memory);
+    assert.strictEqual(memoryGroup, undefined, 'No empty Memory group should be injected');
+  });
+
+  it('Canonical order: Skill before Subagent before Command in empty Global groups', () => {
+    const nodes = buildTreeNodes([], { installedPlugins: new Map(), outdated: new Set(), globalClaudeDir } as PluginMetadataOptions);
+    const global = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global')!;
+    const groups = global.children.filter(c => c.kind === NodeKind.Group) as GroupNodeDescriptor[];
+    assert.strictEqual(groups.length, 3, 'expected exactly 3 groups (Skill, Subagent, Command)');
+    assert.strictEqual(groups[0].assetType, AssetType.Skill, 'first group should be Skill');
+    assert.strictEqual(groups[1].assetType, AssetType.Subagent, 'second group should be Subagent');
+    assert.strictEqual(groups[2].assetType, AssetType.Command, 'third group should be Command');
+  });
+
+  it('Global does NOT render without globalClaudeDir when no global assets', () => {
+    const nodes = buildTreeNodes([], { installedPlugins: new Map(), outdated: new Set() } as PluginMetadataOptions);
+    const global = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global');
+    assert.strictEqual(global, undefined, 'Global should not render without globalClaudeDir and no assets');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC8: Working Directory always-visible empty groups when projectClaudeDir is set
+// ---------------------------------------------------------------------------
+
+describe('buildTreeNodes -- AC8: empty WD type groups when projectClaudeDir is set', () => {
+  const projectClaudeDir = '/Users/braden/Projects/MyApp/.claude';
+
+  it('Working Directory container renders with empty groups when projectClaudeDir is set and no WD assets', () => {
+    const nodes = buildTreeNodes([], { installedPlugins: new Map(), outdated: new Set(), projectClaudeDir } as PluginMetadataOptions);
+    const wd = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'working-directory');
+    assert.ok(wd, 'Working Directory container should render when projectClaudeDir is set');
+  });
+
+  it('WD flat root contains Skill group with createTargetDir = <projectClaudeDir>/skills', () => {
+    const nodes = buildTreeNodes([], { installedPlugins: new Map(), outdated: new Set(), projectClaudeDir } as PluginMetadataOptions);
+    const wd = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'working-directory')!;
+    const skillGroup = wd.children.find(c => c.kind === NodeKind.Group && (c as GroupNodeDescriptor).assetType === AssetType.Skill) as GroupNodeDescriptor | undefined;
+    assert.ok(skillGroup, 'Skill group should appear in WD flat root area');
+    assert.strictEqual(skillGroup!.createTargetDir, path.join(projectClaudeDir, 'skills'));
+  });
+
+  it('WD flat root contains Subagent group with createTargetDir = <projectClaudeDir>/agents', () => {
+    const nodes = buildTreeNodes([], { installedPlugins: new Map(), outdated: new Set(), projectClaudeDir } as PluginMetadataOptions);
+    const wd = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'working-directory')!;
+    const agentGroup = wd.children.find(c => c.kind === NodeKind.Group && (c as GroupNodeDescriptor).assetType === AssetType.Subagent) as GroupNodeDescriptor | undefined;
+    assert.ok(agentGroup, 'Subagent group should appear in WD flat root area');
+    assert.strictEqual(agentGroup!.createTargetDir, path.join(projectClaudeDir, 'agents'));
+  });
+
+  it('WD flat root contains Command group with createTargetDir = <projectClaudeDir>/commands', () => {
+    const nodes = buildTreeNodes([], { installedPlugins: new Map(), outdated: new Set(), projectClaudeDir } as PluginMetadataOptions);
+    const wd = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'working-directory')!;
+    const cmdGroup = wd.children.find(c => c.kind === NodeKind.Group && (c as GroupNodeDescriptor).assetType === AssetType.Command) as GroupNodeDescriptor | undefined;
+    assert.ok(cmdGroup, 'Command group should appear in WD flat root area');
+    assert.strictEqual(cmdGroup!.createTargetDir, path.join(projectClaudeDir, 'commands'));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC9: Non-empty groups carry createTargetDir
+// ---------------------------------------------------------------------------
+
+describe('buildTreeNodes -- AC9: non-empty groups carry createTargetDir', () => {
+  it('Non-empty Command group has createTargetDir set to commands segment dir, dirPath undefined', () => {
+    const assets: ClaudeAsset[] = [
+      makeAsset(AssetType.Command, 'foo', '/home/user/.claude/commands/foo.md', AssetScope.Global, '/home/user/.claude')
+    ];
+    const nodes = buildTreeNodes(assets, { installedPlugins: new Map(), outdated: new Set(), globalClaudeDir: '/home/user/.claude' } as PluginMetadataOptions);
+    const global = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global')!;
+    const cmdGroup = global.children.find(c => c.kind === NodeKind.Group && (c as GroupNodeDescriptor).assetType === AssetType.Command) as GroupNodeDescriptor;
+    assert.ok(cmdGroup, 'Command group should exist');
+    assert.strictEqual(cmdGroup.createTargetDir, '/home/user/.claude/commands', 'createTargetDir should be the commands segment dir');
+    assert.strictEqual(cmdGroup.dirPath, undefined, 'Command group dirPath should remain undefined (static children)');
+    assert.ok(cmdGroup.children.length > 0, 'Command group should have children');
+  });
+
+  it('Non-empty Skill group keeps dirPath and also has createTargetDir equal to dirPath', () => {
+    const assets: ClaudeAsset[] = [
+      makeAsset(AssetType.Skill, 'bar', '/home/user/.claude/skills/bar/SKILL.md', AssetScope.Global, '/home/user/.claude')
+    ];
+    const nodes = buildTreeNodes(assets, { installedPlugins: new Map(), outdated: new Set(), globalClaudeDir: '/home/user/.claude' } as PluginMetadataOptions);
+    const global = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global')!;
+    const skillGroup = global.children.find(c => c.kind === NodeKind.Group && (c as GroupNodeDescriptor).assetType === AssetType.Skill) as GroupNodeDescriptor;
+    assert.ok(skillGroup, 'Skill group should exist');
+    assert.ok(skillGroup.dirPath, 'Skill group should have dirPath set');
+    assert.strictEqual(skillGroup.createTargetDir, skillGroup.dirPath, 'createTargetDir should equal dirPath for Skill');
+  });
+
+  it('Non-empty Subagent group keeps dirPath and also has createTargetDir equal to dirPath', () => {
+    const assets: ClaudeAsset[] = [
+      makeAsset(AssetType.Subagent, 'my-agent', '/home/user/.claude/agents/my-agent.md', AssetScope.Global, '/home/user/.claude')
+    ];
+    const nodes = buildTreeNodes(assets, { installedPlugins: new Map(), outdated: new Set(), globalClaudeDir: '/home/user/.claude' } as PluginMetadataOptions);
+    const global = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global')!;
+    const agentGroup = global.children.find(c => c.kind === NodeKind.Group && (c as GroupNodeDescriptor).assetType === AssetType.Subagent) as GroupNodeDescriptor;
+    assert.ok(agentGroup, 'Subagent group should exist');
+    assert.ok(agentGroup.dirPath, 'Subagent group should have dirPath set');
+    assert.strictEqual(agentGroup.createTargetDir, agentGroup.dirPath, 'createTargetDir should equal dirPath for Subagent');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC10: GroupNodeDescriptor carries createTargetDir (descriptor-level coverage)
+// ---------------------------------------------------------------------------
+
+describe('buildTreeNodes -- AC10: GroupNodeDescriptor.createTargetDir present on descriptor', () => {
+  it('descriptor createTargetDir is present on all three injected empty global groups', () => {
+    const globalClaudeDir = '/home/user/.claude';
+    const nodes = buildTreeNodes([], { installedPlugins: new Map(), outdated: new Set(), globalClaudeDir } as PluginMetadataOptions);
+    const global = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global')!;
+    const groups = global.children.filter(c => c.kind === NodeKind.Group) as GroupNodeDescriptor[];
+    for (const g of groups) {
+      assert.ok(g.createTargetDir !== undefined, `Group ${g.assetType} should have createTargetDir on descriptor`);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC11: Exactly one group per creatable type, no duplicates
+// ---------------------------------------------------------------------------
+
+describe('buildTreeNodes -- AC11: exactly one group per creatable type, no duplicates', () => {
+  it('Global container has exactly three creatable-type groups and exactly one of each when Command has an asset while Skill and Subagent are injected empty', () => {
+    const globalClaudeDir = '/home/user/.claude';
+    const assets: ClaudeAsset[] = [
+      makeAsset(AssetType.Command, 'foo', '/home/user/.claude/commands/foo.md', AssetScope.Global, globalClaudeDir)
+    ];
+    const nodes = buildTreeNodes(assets, { installedPlugins: new Map(), outdated: new Set(), globalClaudeDir } as PluginMetadataOptions);
+    const global = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global')!;
+    assert.ok(global, 'Global container must exist');
+
+    const groups = global.children.filter(c => c.kind === NodeKind.Group) as GroupNodeDescriptor[];
+    const creatableTypes = [AssetType.Skill, AssetType.Subagent, AssetType.Command];
+
+    // Total count of creatable-type groups must be exactly three
+    const creatableGroups = groups.filter(g => creatableTypes.includes(g.assetType));
+    assert.strictEqual(creatableGroups.length, 3, 'Global container must have exactly three creatable-type groups (Skill, Subagent, Command)');
+
+    // Exactly one group per creatable type
+    for (const type of creatableTypes) {
+      const count = groups.filter(g => g.assetType === type).length;
+      assert.strictEqual(count, 1, `Expected exactly one ${type} group, got ${count}`);
+    }
+
+    // Memory must not be injected as an empty group
+    const memoryGroups = groups.filter(g => g.assetType === AssetType.Memory);
+    assert.strictEqual(memoryGroups.length, 0, 'Memory group must not be injected when no Memory assets exist');
   });
 });

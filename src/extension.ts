@@ -13,6 +13,8 @@ import { openPluginManager, PluginManagerDeps } from './webview/pluginManager';
 import { AssetTreeProvider } from './tree/assetTreeProvider';
 import { AssetNode, PluginFolderNode, ContainerNode, GroupNode } from './tree/nodes';
 import { isValidAssetName, createAsset } from './core/assetCreation';
+import { planDelete, deleteConfirmDetail } from './core/deletePlan';
+import { deleteWithRetry } from './core/deleteWithRetry';
 import { getSectionInfoByContextValue } from './core/sectionInfo';
 import { AssetType } from './core/types';
 import { watchRoots } from './services/watcher';
@@ -670,41 +672,46 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     vscode.commands.registerCommand('claudeAssets.deleteFile', async (arg: unknown) => {
-      const targetPath = resolveFsPath(arg);
-      if (!targetPath) {
-        vscode.window.showErrorMessage('Could not delete: no path.');
-        return;
-      }
-      // Plugin files are managed by Claude -- never let the user delete inside the plugins tree.
       const pluginsRoot = path.join(homeClaudeDir, 'plugins');
-      if (targetPath === pluginsRoot || targetPath.startsWith(pluginsRoot + path.sep)) {
-        vscode.window.showInformationMessage(
-          'Plugin files are managed by Claude. Right-click the plugin and choose "Uninstall Plugin" instead.'
-        );
+      const plan = planDelete(resolveFsPath(arg), pluginsRoot);
+      if (!plan.ok) {
+        if (plan.refusal === 'no-path') {
+          vscode.window.showErrorMessage('Could not delete: no path.');
+        } else if (plan.refusal === 'plugins-managed') {
+          vscode.window.showInformationMessage(
+            'Plugin files are managed by Claude. Right-click the plugin and choose "Uninstall Plugin" instead.'
+          );
+        } else if (plan.refusal === 'not-found') {
+          vscode.window.showErrorMessage(`Could not delete: ${plan.targetPath} no longer exists.`);
+          runScan().catch(() => { /* ignore */ });
+        }
         return;
       }
-      let isDir: boolean;
-      try {
-        isDir = fs.statSync(targetPath).isDirectory();
-      } catch {
-        vscode.window.showErrorMessage(`Could not delete: ${targetPath} no longer exists.`);
-        runScan().catch(() => { /* ignore */ });
-        return;
-      }
-      const name = path.basename(targetPath);
-      const kind = isDir ? 'folder' : 'file';
+      const { targetPath, name, kind } = plan;
       const confirm = await vscode.window.showWarningMessage(
         `Delete ${kind} "${name}"?`,
-        { modal: true, detail: `${targetPath}\n\nThis moves it to the trash.` },
+        { modal: true, detail: deleteConfirmDetail(targetPath!) },
         'Delete'
       );
       if (confirm !== 'Delete') {
         return;
       }
+      // Release the recursive fs.watch handle before deleting. On Windows that
+      // handle locks the .claude tree and the delete fails with EBUSY/EPERM;
+      // runScan() below re-establishes the watch afterwards.
+      if (disposeWatcher) {
+        disposeWatcher();
+        disposeWatcher = null;
+      }
       try {
-        await vscode.workspace.fs.delete(vscode.Uri.file(targetPath), { recursive: true, useTrash: true });
+        await deleteWithRetry(() =>
+          Promise.resolve(
+            vscode.workspace.fs.delete(vscode.Uri.file(targetPath!), { recursive: true, useTrash: true })
+          )
+        );
       } catch (err) {
         vscode.window.showErrorMessage(`Could not delete ${name}: ${err}`);
+        await runScan();
         return;
       }
       await runScan();

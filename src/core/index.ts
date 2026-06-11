@@ -5,3 +5,5 @@ export * from './scanRoots';
 export * from './scanner';
 export * from './containerDerivations';
 export * from './pluginMetadata';
+export * from './deletePlan';
+export * from './deleteWithRetry';

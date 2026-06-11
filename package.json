@@ -404,7 +404,12 @@
         },
         "claudeAssets.markdownOpenMode": {
           "type": "string",
-          "enum": ["default", "code", "preview", "split"],
+          "enum": [
+            "default",
+            "code",
+            "preview",
+            "split"
+          ],
           "enumDescriptions": [
             "Use VS Code's default editor for Markdown.",
             "Open the Markdown source in the editor.",
@@ -421,7 +426,7 @@
     "compile": "tsc -p .",
     "watch": "tsc -p . --watch",
     "bundle": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node20 --minify --sourcemap",
-    "test": "npm run compile && TS_NODE_PROJECT=tsconfig.test.json mocha",
+    "test": "npm run compile && cross-env TS_NODE_PROJECT=tsconfig.test.json mocha",
     "vscode:prepublish": "npm run bundle",
     "package": "npx --yes @vscode/vsce package --readme-path MARKETPLACE.md"
   },
@@ -429,6 +434,7 @@
     "@types/mocha": "^10.0.6",
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.90.0",
+    "cross-env": "^7.0.3",
     "esbuild": "^0.28.0",
     "mocha": "^10.4.0",
     "ts-node": "^10.9.2",

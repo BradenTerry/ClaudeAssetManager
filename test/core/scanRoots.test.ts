@@ -15,7 +15,8 @@ describe('buildScanRoots -- scope classification', () => {
     const roots = buildScanRoots('/home/user/.claude', [], []);
     const plugin = roots.find(r => r.scope === AssetScope.Plugin);
     assert.ok(plugin, 'expected a Plugin-scoped root');
-    assert.ok(plugin.path.endsWith('plugins/cache'), `plugin root should point to plugins/cache, got: ${plugin.path}`);
+    // buildScanRoots uses path.join, so the separator is platform-specific.
+    assert.ok(plugin.path.endsWith(path.join('plugins', 'cache')), `plugin root should point to plugins/cache, got: ${plugin.path}`);
   });
 
   it('returns Project-scoped roots for workspace dirs', () => {

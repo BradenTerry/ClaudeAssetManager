@@ -13,7 +13,13 @@ env:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Delete and other fs commands behave differently per OS (Windows file locks,
+    # Recycle Bin, case-insensitive paths), so run the suite on all three.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 

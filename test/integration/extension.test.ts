@@ -22,6 +22,26 @@ describe('extension integration', () => {
   let home: string;
   let claudeDir: string;
 
+  // The extension's runScan() sets up a recursive fs.watch on the .claude tree.
+  // That is not under test here, and on Windows libuv aborts the process when a
+  // watched dir is removed (which our temp-dir teardown does). Stub fs.watch to
+  // an inert watcher so no real OS handle is ever created. Patch the underlying
+  // require('fs') module object -- the `import * as fs` namespaces (here and in
+  // watcher.ts) are getter wrappers that read through to it at call time.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const realFs = require('fs') as { watch: unknown };
+  const realWatch = realFs.watch;
+  before(() => {
+    Object.defineProperty(realFs, 'watch', {
+      value: () => ({ on: () => { /* no-op */ }, close: () => { /* no-op */ } }),
+      configurable: true,
+      writable: true
+    });
+  });
+  after(() => {
+    Object.defineProperty(realFs, 'watch', { value: realWatch, configurable: true, writable: true });
+  });
+
   beforeEach(() => {
     // Point os.homedir() at a temp dir so ~/.claude is sandboxed per test.
     // os.homedir() reads HOME on POSIX and USERPROFILE on Windows, so set both.

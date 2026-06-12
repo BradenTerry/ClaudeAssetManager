@@ -1,10 +1,10 @@
 name: CI
 
-# Runs the test suite on every pull request targeting main and on pushes to main.
+# Runs the test suite on every pull request targeting main. Merges to main are not re-tested
+# here -- the PR already ran this suite, and the release workflow re-runs it on the tagged commit
+# before publishing, so that step is the actual release gate.
 on:
   pull_request:
-    branches: [main]
-  push:
     branches: [main]
 
 # Run bundled JavaScript actions on Node 24 (Node 20 action runtime is deprecated).

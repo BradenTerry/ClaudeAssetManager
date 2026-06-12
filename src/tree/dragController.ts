@@ -107,36 +107,46 @@ export class AssetDragAndDropController implements vscode.TreeDragAndDropControl
    * by prefix so the exact view-id casing does not matter). `sawData` reports whether any candidate
    * drag payload was present at all, to distinguish a failed read from an unrelated drop.
    */
-  private async readItems(dataTransfer: vscode.DataTransfer): Promise<{ items: DragItem[]; sawData: boolean }> {
-    let sawData = false;
+  private async readItems(dataTransfer: vscode.DataTransfer): Promise<{ items: DragItem[]; mimes: string[] }> {
+    const mimes: string[] = [];
+    dataTransfer.forEach((_item: vscode.DataTransferItem, mime: string) => { mimes.push(mime); });
 
     const custom = dataTransfer.get(MIME);
     if (custom) {
-      sawData = true;
       try {
         const parsed = JSON.parse(await custom.asString()) as DragItem[];
-        if (parsed && parsed.length > 0) return { items: parsed, sawData };
+        if (parsed && parsed.length > 0) return { items: parsed, mimes };
       } catch { /* fall through to tree mimes */ }
     }
 
+    // Try every tree mime: its value may be the node objects, or a JSON string of them.
     let found: DragItem[] = [];
-    dataTransfer.forEach((item: vscode.DataTransferItem, mime: string) => {
-      if (found.length > 0 || !mime.startsWith(TREE_MIME_PREFIX)) return;
-      sawData = true;
-      const value = (item as { value?: unknown }).value;
+    for (const mime of mimes) {
+      if (found.length > 0 || !mime.startsWith(TREE_MIME_PREFIX)) continue;
+      const item = dataTransfer.get(mime);
+      const value = (item as { value?: unknown } | undefined)?.value;
+      let nodes: unknown[] | undefined;
       if (Array.isArray(value)) {
-        const items = nodesToItems(value);
+        nodes = value;
+      } else {
+        try {
+          const parsed = JSON.parse(await item!.asString());
+          if (Array.isArray(parsed)) nodes = parsed;
+        } catch { /* not JSON */ }
+      }
+      if (nodes) {
+        const items = nodesToItems(nodes);
         if (items.length > 0) found = items;
       }
-    });
-    return { items: found, sawData };
+    }
+    return { items: found, mimes };
   }
 
   async handleDrop(target: TreeNode | undefined, dataTransfer: vscode.DataTransfer): Promise<void> {
-    const { items, sawData } = await this.readItems(dataTransfer);
+    const { items, mimes } = await this.readItems(dataTransfer);
     if (items.length === 0) {
-      if (sawData) {
-        vscode.window.showWarningMessage('Could not copy: drag a skill, agent, or command (a file or its folder) from one of the sections.');
+      if (mimes.length > 0) {
+        vscode.window.showWarningMessage(`Could not read the dragged item. Drag data types: ${mimes.join(', ')}`);
       }
       return;
     }

@@ -188,6 +188,19 @@ class MarkdownString {
   }
 }
 
+class DataTransferItem {
+  constructor(public value: unknown) {}
+  asString(): Promise<string> { return Promise.resolve(String(this.value)); }
+}
+class DataTransfer {
+  private map = new Map<string, DataTransferItem>();
+  get(mime: string): DataTransferItem | undefined { return this.map.get(mime); }
+  set(mime: string, item: DataTransferItem): void { this.map.set(mime, item); }
+  forEach(cb: (item: DataTransferItem, mime: string) => void): void {
+    for (const [mime, item] of this.map) cb(item, mime);
+  }
+}
+
 function disposable(): { dispose(): void } {
   return { dispose: () => { /* no-op */ } };
 }
@@ -203,6 +216,8 @@ export const vscodeMock = {
   ThemeIcon,
   ThemeColor,
   MarkdownString,
+  DataTransfer,
+  DataTransferItem,
   Disposable: class {},
   TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
   ProgressLocation: { Notification: 15, Window: 10, SourceControl: 1 },

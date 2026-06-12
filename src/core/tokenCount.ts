@@ -118,12 +118,14 @@ export function describeTokenUsage(usage: TokenUsage | undefined): string | unde
 }
 
 /**
- * General legend for the "(a)" / "(d)" abbreviations, independent of any specific
- * usage. Shared by the section summary row's hover tooltip and the Token Legend
- * dialog so both stay in sync.
+ * Legend mapping every abbreviation used in the token displays, independent of any
+ * specific usage. Shared by the section summary row's hover tooltip and the title-bar
+ * "Token Legend" dialog so both stay in sync.
  */
 export function tokenLegendLines(): string[] {
   return [
+    "~  a rough estimate, not the exact tokenizer count.",
+    "tk  tokens.",
     "(a) always loaded: counted into Claude's context every turn (e.g. CLAUDE.md, a skill's name + description).",
     "(d) on demand: loaded only when that asset is actually used (e.g. a skill's body, a command, a workflow)."
   ];

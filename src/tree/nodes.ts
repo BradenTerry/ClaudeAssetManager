@@ -17,19 +17,17 @@ export type TreeNode = ContainerNode | PluginFolderNode | GroupNode | AssetNode 
 
 /**
  * The section's aggregate token total, rendered as the first row of a view (under
- * the Global / Working Directory header) with an info icon. The view message banner
- * can't carry an icon or hover, so the summary lives here: the label shows the
- * "(a)"/"(d)" totals and the hover tooltip (plus a click) explains what they mean.
+ * the Global / Working Directory header). The label shows the "(a)"/"(d)" totals;
+ * hovering reveals the abbreviation legend. The same legend is also one click away
+ * from the always-visible info button in the view title bar (see the tokenLegend
+ * command), so the abbreviations are explained without making the row clickable.
  */
 export class TokenSummaryNode extends vscode.TreeItem {
   readonly kind = NodeKind.TokenSummary;
 
   constructor(usage: TokenUsage) {
     super(describeTokenUsage(usage) ?? '', vscode.TreeItemCollapsibleState.None);
-    this.iconPath = new vscode.ThemeIcon('info');
     this.contextValue = 'tokenSummary';
-    // The (a)/(d) legend lives in the hover tooltip only -- the row itself is not
-    // clickable, so selecting it does nothing.
     this.tooltip = new vscode.MarkdownString(tokenLegendLines().join('  \n'));
   }
 }

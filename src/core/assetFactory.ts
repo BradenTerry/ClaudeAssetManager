@@ -1,6 +1,7 @@
 import * as path from 'path';
-import { AssetType, AssetScope, ClaudeAsset } from './types';
+import { AssetType, AssetScope, ClaudeAsset, TokenUsage } from './types';
 import { parseFrontmatter } from './frontmatter';
+import { computeTokenUsage } from './tokenCount';
 import * as fs from 'fs';
 
 /**
@@ -136,6 +137,7 @@ export function buildAsset(filePath: string, type: AssetType, scope: AssetScope,
   let description: string | undefined;
   let tools: string[] | undefined;
   let frontmatter: Record<string, unknown> = {};
+  let tokenUsage: TokenUsage | undefined;
 
   if (type !== AssetType.Config) {
     try {
@@ -148,10 +150,12 @@ export function buildAsset(filePath: string, type: AssetType, scope: AssetScope,
       // Parse tools from either 'tools' or 'allowed-tools' field
       const rawTools = frontmatter['tools'] ?? frontmatter['allowed-tools'];
       tools = parseToolsList(rawTools);
+      // Estimate the upfront/rest token split from the same content we just read.
+      tokenUsage = computeTokenUsage(type, content);
     } catch {
       // unreadable file -- proceed with no frontmatter
     }
   }
 
-  return { type, name, filePath, scope, description, rootPath, tools, frontmatter };
+  return { type, name, filePath, scope, description, rootPath, tools, frontmatter, tokenUsage };
 }

@@ -15,6 +15,7 @@ import { AssetNode, PluginFolderNode, ContainerNode, GroupNode } from './tree/no
 import { isValidAssetName, createAsset } from './core/assetCreation';
 import { planDelete, deleteConfirmDetail } from './core/deletePlan';
 import { deleteWithRetry } from './core/deleteWithRetry';
+import { tokenLegendLines } from './core/tokenCount';
 import { getSectionInfoByContextValue } from './core/sectionInfo';
 import { AssetType } from './core/types';
 import { watchRoots } from './services/watcher';
@@ -24,6 +25,10 @@ import {
   getExcludeDirs,
   getMaxDepth,
   getMarkdownOpenMode,
+  getShowTokenUsage,
+  setShowTokenUsage,
+  getShowWorktrees,
+  setShowWorktrees,
   addDirectory,
   removeDirectory
 } from './services/settings';
@@ -57,7 +62,22 @@ export function activate(context: vscode.ExtensionContext): void {
   const globalProvider = new AssetTreeProvider('global');
   const workingDirProvider = new AssetTreeProvider('working-directory');
 
+  // Drives which token-toggle button (show/hide) each view's title bar renders.
+  // Each section has its own independent toggle, key, and setting.
+  const tokenCtxKey = (section: 'global' | 'working-directory'): string =>
+    section === 'global' ? 'claudeAssets.tokenUsageEnabledGlobal' : 'claudeAssets.tokenUsageEnabledWorkingDirectory';
+  vscode.commands.executeCommand('setContext', tokenCtxKey('global'), getShowTokenUsage('global'));
+  vscode.commands.executeCommand('setContext', tokenCtxKey('working-directory'), getShowTokenUsage('working-directory'));
+
+  // Drives which worktree-toggle button (show/hide) the Working Directory title bar renders.
+  const WORKTREES_CTX_KEY = 'claudeAssets.worktreesEnabled';
+  vscode.commands.executeCommand('setContext', WORKTREES_CTX_KEY, getShowWorktrees());
+
   let disposeWatcher: (() => void) | null = null;
+  // Root paths from the latest scan; a save under one of these triggers a re-scan
+  // (so token counts update on save even where recursive fs.watch is unsupported).
+  let scanRootPaths: string[] = [];
+  let saveRescanTimer: ReturnType<typeof setTimeout> | null = null;
   // Latest set of outdated plugins, refreshed on every scan; drives "Update all".
   let outdatedPlugins: InstalledPluginInfo[] = [];
   // The workspace folder that owns a .claude directory, updated on every scan.
@@ -334,6 +354,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const maxDepth = getMaxDepth();
 
     const roots = buildScanRoots(homeClaudeDir, registeredDirs, workspaceDirs);
+    scanRootPaths = roots.map(r => r.path);
     const assets = scan(roots, { excludeDirs, followSymlinks, maxDepth });
 
     // Read installed plugins and catalog cache (no network; files maintained by Claude)
@@ -365,6 +386,8 @@ export function activate(context: vscode.ExtensionContext): void {
       : new Map();
 
     const meta = { installedPlugins, outdated, enabled: enabledMap, marketplaces, projectTeamEnabled: currentTeamEnabled, projectLocalEnabled: currentLocalEnabled, projectClaudeDir, globalClaudeDir: homeClaudeDir };
+    // Each provider leads its tree with a token-summary row (info icon + (a)/(d)
+    // legend) when its section's token toggle is on -- see AssetTreeProvider.rebuild.
     globalProvider.update(assets, meta);
     workingDirProvider.update(assets, meta);
 
@@ -517,6 +540,20 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   };
 
+  // Toggle one section's token display: persist, flip its context key (button state), re-scan.
+  async function setSectionTokens(section: 'global' | 'working-directory', value: boolean): Promise<void> {
+    await setShowTokenUsage(section, value);
+    await vscode.commands.executeCommand('setContext', tokenCtxKey(section), value);
+    await runScan();
+  }
+
+  // Toggle Working Directory worktree visibility: persist, flip its context key, re-scan.
+  async function setWorktreesVisible(value: boolean): Promise<void> {
+    await setShowWorktrees(value);
+    await vscode.commands.executeCommand('setContext', WORKTREES_CTX_KEY, value);
+    await runScan();
+  }
+
   // Shared helper: prompts for a name, creates the asset file, re-scans, then opens it.
   async function handleCreate(type: AssetType, node: GroupNode | undefined, label: string): Promise<void> {
     const targetDir = node?.createTargetDir;
@@ -562,6 +599,19 @@ export function activate(context: vscode.ExtensionContext): void {
       runScan().catch(err => {
         vscode.window.showErrorMessage(`Scan failed: ${err}`);
       });
+    }),
+
+    vscode.commands.registerCommand('claudeAssets.enableTokenUsageGlobal', () => setSectionTokens('global', true)),
+    vscode.commands.registerCommand('claudeAssets.disableTokenUsageGlobal', () => setSectionTokens('global', false)),
+    vscode.commands.registerCommand('claudeAssets.enableTokenUsageWorkingDirectory', () => setSectionTokens('working-directory', true)),
+    vscode.commands.registerCommand('claudeAssets.disableTokenUsageWorkingDirectory', () => setSectionTokens('working-directory', false)),
+    vscode.commands.registerCommand('claudeAssets.showWorktrees', () => setWorktreesVisible(true)),
+    vscode.commands.registerCommand('claudeAssets.hideWorktrees', () => setWorktreesVisible(false)),
+    vscode.commands.registerCommand('claudeAssets.tokenLegend', () => {
+      vscode.window.showInformationMessage(
+        'Token counts in this view are rough ~estimates.',
+        { modal: true, detail: tokenLegendLines().join('\n\n') }
+      );
     }),
 
     vscode.commands.registerCommand('claudeAssets.openDefault', (arg: unknown) => {
@@ -924,6 +974,19 @@ export function activate(context: vscode.ExtensionContext): void {
       if (e.affectsConfiguration('claudeAssets')) {
         runScan().catch(() => { /* ignore */ });
       }
+    }),
+
+    // Re-scan when a tracked asset file is saved, so its token count updates.
+    // Reliable across platforms (recursive fs.watch is unsupported on Linux).
+    vscode.workspace.onDidSaveTextDocument(doc => {
+      const p = doc.uri.fsPath;
+      const tracked = scanRootPaths.some(root => p === root || p.startsWith(root + path.sep));
+      if (!tracked) return;
+      if (saveRescanTimer) clearTimeout(saveRescanTimer);
+      saveRescanTimer = setTimeout(() => {
+        saveRescanTimer = null;
+        runScan().catch(() => { /* ignore */ });
+      }, 150);
     }),
 
     vscode.commands.registerCommand('claudeAssets.createSkill', async (node?: GroupNode) => {

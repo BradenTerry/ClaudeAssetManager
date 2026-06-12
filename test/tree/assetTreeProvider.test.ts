@@ -214,3 +214,135 @@ describe('Tree node descriptors -- default click command', () => {
     assert.deepStrictEqual(assetNode.commandArgs, [filePath]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Token usage flows through descriptors (per-asset usage + group totals)
+// ---------------------------------------------------------------------------
+
+describe('Tree node descriptors -- token usage', () => {
+  const withUsage = (a: ClaudeAsset, upfront: number, rest: number): ClaudeAsset =>
+    ({ ...a, tokenUsage: { upfront, rest, total: upfront + rest } });
+
+  it('Command group sums its children into tokenTotals and each leaf carries tokenUsage', () => {
+    const assets = [
+      withUsage(makeAsset(AssetType.Command, 'c1', '/commands/c1.md'), 10, 100),
+      withUsage(makeAsset(AssetType.Command, 'c2', '/commands/c2.md'), 5, 200)
+    ];
+    const groups = getGlobalGroups(buildTreeNodes(assets));
+    const commands = groups.find(g => g.assetType === AssetType.Command)!;
+    assert.ok(commands, 'expected a Command group');
+    assert.deepStrictEqual(commands.tokenTotals, { upfront: 15, rest: 300, total: 315 });
+    // Static command group keeps AssetNodeDescriptor children, each with usage.
+    const c1 = commands.children.find(c => c.label === 'c1')!;
+    assert.deepStrictEqual(c1.tokenUsage, { upfront: 10, rest: 100, total: 110 });
+  });
+
+  it('Skills group (lazy, no precomputed children) still reports summed tokenTotals', () => {
+    const assets = [
+      withUsage(makeAsset(AssetType.Skill, 'a', '/skills/a/SKILL.md'), 20, 1000),
+      withUsage(makeAsset(AssetType.Skill, 'b', '/skills/b/SKILL.md'), 30, 2000)
+    ];
+    const groups = getGlobalGroups(buildTreeNodes(assets));
+    const skills = groups.find(g => g.assetType === AssetType.Skill)!;
+    assert.ok(skills.dirPath, 'skills group should be directory-backed (lazy children)');
+    assert.strictEqual(skills.children.length, 0, 'lazy group has no precomputed children');
+    assert.deepStrictEqual(skills.tokenTotals, { upfront: 50, rest: 3000, total: 3050 });
+  });
+
+  it('showTokenUsage=false strips token usage from assets and group totals', () => {
+    const assets = [
+      withUsage(makeAsset(AssetType.Command, 'c1', '/commands/c1.md'), 10, 100),
+      withUsage(makeAsset(AssetType.Skill, 'a', '/skills/a/SKILL.md'), 20, 1000)
+    ];
+    const groups = getGlobalGroups(buildTreeNodes(assets, undefined, false));
+    const commands = groups.find(g => g.assetType === AssetType.Command)!;
+    const skills = groups.find(g => g.assetType === AssetType.Skill)!;
+    assert.strictEqual(commands.tokenTotals, undefined, 'group totals stripped');
+    assert.strictEqual(skills.tokenTotals, undefined, 'lazy group totals stripped');
+    assert.strictEqual(commands.children[0].tokenUsage, undefined, 'asset usage stripped');
+  });
+});
+
+describe('Tree node descriptors -- plugin token totals', () => {
+  const installPath = '/home/user/.claude/plugins/cache/mk/foo/1.0.0';
+
+  const pluginInfo = {
+    name: 'foo', id: 'foo@mk', marketplace: 'mk', version: '1.0.0',
+    installPath, lastUpdated: '', scope: 'user' as const
+  };
+
+  const pluginSkill = (): ClaudeAsset => ({
+    type: AssetType.Skill, name: 's', filePath: `${installPath}/skills/s/SKILL.md`,
+    scope: AssetScope.Plugin, description: 'd', rootPath: '/home/user/.claude/plugins',
+    tokenUsage: { upfront: 12, rest: 340, total: 352 }
+  });
+
+  function findPluginFolder(nodes: ReturnType<typeof buildTreeNodes>): PluginFolderNodeDescriptor | undefined {
+    let found: PluginFolderNodeDescriptor | undefined;
+    const walk = (n: { kind: NodeKind; children?: unknown[] }): void => {
+      if (n.kind === NodeKind.PluginFolder) { found = n as unknown as PluginFolderNodeDescriptor; return; }
+      for (const c of (n.children ?? []) as { kind: NodeKind; children?: unknown[] }[]) walk(c);
+    };
+    for (const n of nodes) walk(n);
+    return found;
+  }
+
+  it('enabled plugin folder reports the summed token total of its assets', () => {
+    const nodes = buildTreeNodes([pluginSkill()], {
+      installedPlugins: new Map([['foo', pluginInfo]]),
+      outdated: new Set<string>(),
+      enabled: new Map([['foo@mk', true]])
+    });
+    const folder = findPluginFolder(nodes);
+    assert.ok(folder, 'plugin folder present');
+    assert.deepStrictEqual(folder!.tokenTotals, { upfront: 12, rest: 340, total: 352 });
+  });
+
+  it('disabled plugin folder reports no token total (it does not load)', () => {
+    const nodes = buildTreeNodes([pluginSkill()], {
+      installedPlugins: new Map([['foo', pluginInfo]]),
+      outdated: new Set<string>(),
+      enabled: new Map([['foo@mk', false]])
+    });
+    const folder = findPluginFolder(nodes);
+    assert.ok(folder, 'plugin folder present');
+    assert.strictEqual(folder!.tokenTotals, undefined);
+  });
+
+  function findContainer(
+    nodes: ReturnType<typeof buildTreeNodes>,
+    kind: ContainerNodeDescriptor['containerKind']
+  ): ContainerNodeDescriptor | undefined {
+    let found: ContainerNodeDescriptor | undefined;
+    const walk = (n: { kind: NodeKind; containerKind?: string; children?: unknown[] }): void => {
+      if (n.kind === NodeKind.Container && n.containerKind === kind && !found) {
+        found = n as unknown as ContainerNodeDescriptor;
+      }
+      for (const c of (n.children ?? []) as { kind: NodeKind; containerKind?: string; children?: unknown[] }[]) walk(c);
+    };
+    for (const n of nodes) walk(n);
+    return found;
+  }
+
+  it('marketplace and plugins-root containers sum their enabled plugins', () => {
+    const bar = {
+      name: 'bar', id: 'bar@mk', marketplace: 'mk', version: '2.0.0',
+      installPath: '/home/user/.claude/plugins/cache/mk/bar/2.0.0', lastUpdated: '', scope: 'user' as const
+    };
+    const barSkill: ClaudeAsset = {
+      type: AssetType.Skill, name: 'b', filePath: `${bar.installPath}/skills/b/SKILL.md`,
+      scope: AssetScope.Plugin, description: 'd', rootPath: '/home/user/.claude/plugins',
+      tokenUsage: { upfront: 8, rest: 60, total: 68 }
+    };
+    const nodes = buildTreeNodes([pluginSkill(), barSkill], {
+      installedPlugins: new Map([['foo', pluginInfo], ['bar', bar]]),
+      outdated: new Set<string>(),
+      // foo enabled, bar disabled -> only foo counts.
+      enabled: new Map([['foo@mk', true], ['bar@mk', false]])
+    });
+    const mk = findContainer(nodes, 'marketplace');
+    const root = findContainer(nodes, 'plugins');
+    assert.deepStrictEqual(mk!.tokenTotals, { upfront: 12, rest: 340, total: 352 }, 'marketplace sums enabled only');
+    assert.deepStrictEqual(root!.tokenTotals, { upfront: 12, rest: 340, total: 352 }, 'plugins root sums enabled only');
+  });
+});

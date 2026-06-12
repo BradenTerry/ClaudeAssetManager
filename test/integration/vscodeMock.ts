@@ -40,6 +40,11 @@ interface Harness {
   config: Record<string, unknown>;
   workspaceFolders: Array<{ uri: { fsPath: string }; name: string }> | undefined;
   workspaceName: string | undefined;
+  /** Tree views created via window.createTreeView, keyed by view id. `provider` is the
+   *  registered TreeDataProvider, so tests can inspect rendered rows (e.g. the summary). */
+  treeViews: Record<string, { title: string; message?: string; provider?: { getChildren(el?: unknown): unknown } }>;
+  /** Registered onDidSaveTextDocument handlers; fire via fireDidSave(). */
+  saveHandlers: Array<(doc: { uri: { fsPath: string } }) => void>;
   /** Number of leading workspace.fs.delete calls that should throw before one succeeds. */
   fsDeleteFailuresRemaining: number;
   /** errno used for the simulated delete failures (e.g. 'EBUSY', 'EPERM'). */
@@ -61,6 +66,8 @@ export const harness: Harness = {
   config: {},
   workspaceFolders: [],
   workspaceName: undefined,
+  treeViews: {},
+  saveHandlers: [],
   fsDeleteFailuresRemaining: 0,
   fsDeleteErrorCode: 'EBUSY',
   fsDeleteCalls: 0,
@@ -76,6 +83,8 @@ export const harness: Harness = {
     this.config = {};
     this.workspaceFolders = [];
     this.workspaceName = undefined;
+    this.treeViews = {};
+    this.saveHandlers = [];
     this.fsDeleteFailuresRemaining = 0;
     this.fsDeleteErrorCode = 'EBUSY';
     this.fsDeleteCalls = 0;
@@ -85,6 +94,13 @@ export const harness: Harness = {
 /** Convenience accessor: the last recorded message, or undefined. */
 export function lastMessage(): RecordedMessage | undefined {
   return harness.messages[harness.messages.length - 1];
+}
+
+/** Simulate VSCode firing onDidSaveTextDocument for a file path. */
+export function fireDidSave(fsPath: string): void {
+  for (const cb of harness.saveHandlers) {
+    cb({ uri: { fsPath } });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -206,18 +222,23 @@ export const vscodeMock = {
     showTextDocument: () => Promise.resolve({}),
     withProgress: (_opts: unknown, task: (p: unknown) => unknown) =>
       Promise.resolve(task({ report: () => { /* no-op */ } })),
-    createTreeView: () => ({
-      title: '',
-      message: '',
-      description: '',
-      visible: true,
-      reveal: () => Promise.resolve(),
-      onDidChangeVisibility: () => disposable(),
-      onDidChangeSelection: () => disposable(),
-      onDidExpandElement: () => disposable(),
-      onDidCollapseElement: () => disposable(),
-      dispose: () => { /* no-op */ }
-    }),
+    createTreeView: (id: string, opts?: { treeDataProvider?: { getChildren(el?: unknown): unknown } }) => {
+      const view = {
+        title: '',
+        message: undefined as string | undefined,
+        description: '',
+        provider: opts?.treeDataProvider,
+        visible: true,
+        reveal: () => Promise.resolve(),
+        onDidChangeVisibility: () => disposable(),
+        onDidChangeSelection: () => disposable(),
+        onDidExpandElement: () => disposable(),
+        onDidCollapseElement: () => disposable(),
+        dispose: () => { /* no-op */ }
+      };
+      harness.treeViews[id] = view;
+      return view;
+    },
     createWebviewPanel: () => ({
       webview: { html: '', onDidReceiveMessage: () => disposable(), postMessage: () => Promise.resolve(true), asWebviewUri: (u: unknown) => u, cspSource: '' },
       onDidDispose: () => disposable(),
@@ -273,7 +294,11 @@ export const vscodeMock = {
       }
     },
     onDidChangeConfiguration: () => disposable(),
-    onDidChangeWorkspaceFolders: () => disposable()
+    onDidChangeWorkspaceFolders: () => disposable(),
+    onDidSaveTextDocument: (cb: (doc: { uri: { fsPath: string } }) => void) => {
+      harness.saveHandlers.push(cb);
+      return disposable();
+    }
   },
 
   env: {

@@ -196,6 +196,9 @@ class DataTransfer {
   private map = new Map<string, DataTransferItem>();
   get(mime: string): DataTransferItem | undefined { return this.map.get(mime); }
   set(mime: string, item: DataTransferItem): void { this.map.set(mime, item); }
+  forEach(cb: (item: DataTransferItem, mime: string) => void): void {
+    for (const [mime, item] of this.map) cb(item, mime);
+  }
 }
 
 function disposable(): { dispose(): void } {

@@ -4,8 +4,12 @@ import * as os from 'os';
 import * as path from 'path';
 // Importing the mock first installs the require('vscode') hook BEFORE the
 // extension (and its vscode-coupled modules) are loaded below.
-import { vscodeMock, harness, lastMessage } from './vscodeMock';
+import { vscodeMock, harness, lastMessage, fireDidSave } from './vscodeMock';
 import { makeTempDir, writeFile, mkdir } from '../core/fixtures';
+import { AssetType, AssetScope, ClaudeAsset } from '../../src/core/types';
+import { computeTokenUsage } from '../../src/core/tokenCount';
+// Resolved through the vscode hook installed above.
+import { AssetTreeProvider } from '../../src/tree/assetTreeProvider';
 
 // Load the real extension through the hook. Required (not imported) so it
 // resolves after the hook above is installed.
@@ -14,6 +18,14 @@ const extension = require('../../src/extension') as { activate: (ctx: unknown) =
 
 const exec = (command: string, ...args: unknown[]): Promise<unknown> =>
   vscodeMock.commands.executeCommand(command, ...args);
+
+// The aggregate token summary is the first tree row (info icon + (a)/(d) totals),
+// rendered only when the section's token toggle is on. Returns its label or undefined.
+const summaryLabel = (viewId: string): string | undefined => {
+  const provider = harness.treeViews[viewId]?.provider;
+  const rows = (provider?.getChildren() ?? []) as Array<{ contextValue?: string; label?: string }>;
+  return rows.find(r => r.contextValue === 'tokenSummary')?.label;
+};
 
 describe('extension integration', () => {
   let originalHome: string | undefined;
@@ -303,6 +315,219 @@ describe('extension integration', () => {
       await exec('claudeAssets.showSectionInfo', { contextValue: 'somethingElse' });
       assert.strictEqual(harness.messages.length, 0, 'no message for unknown section');
       assert.strictEqual(harness.openedExternal.length, 0);
+    });
+  });
+
+  describe('context summary row', () => {
+    it('leads the Global view with an always-loaded token summary after a scan', async () => {
+      // Token display is off by default; enable it for this section.
+      harness.config['claudeAssets.showTokenUsageGlobal'] = true;
+      // A CLAUDE.md (always loaded in full) plus a skill (small upfront, larger body).
+      writeFile(path.join(claudeDir, 'CLAUDE.md'), '# rules\n'.repeat(80));
+      writeFile(
+        path.join(claudeDir, 'skills', 's', 'SKILL.md'),
+        `---\nname: s\ndescription: does s\n---\n${'body text '.repeat(200)}`
+      );
+      await exec('claudeAssets.refresh');
+      const label = summaryLabel('claudeAssets.global') ?? '';
+      // Summary uses the same compact "(a)" / "(d)" format as the rows.
+      assert.ok(/\(a\)/.test(label), `summary should show the always (a) total: ${label}`);
+      assert.ok(/tk/.test(label), `summary should use the tk unit: ${label}`);
+      assert.ok(/\(d\)/.test(label), `summary should show the on-demand (d) total: ${label}`);
+      assert.ok(!/%/.test(label), `summary must not show a percentage: ${label}`);
+    });
+
+    it('shows no summary row when there are no global assets', async () => {
+      // Enabled, but beforeEach activated with empty .claude dirs -> nothing to count.
+      harness.config['claudeAssets.showTokenUsageGlobal'] = true;
+      await exec('claudeAssets.refresh');
+      assert.strictEqual(summaryLabel('claudeAssets.global'), undefined);
+    });
+
+    it('shows no summary row when token display is off', async () => {
+      writeFile(path.join(claudeDir, 'CLAUDE.md'), '# rules\n'.repeat(80));
+      await exec('claudeAssets.refresh');
+      assert.strictEqual(summaryLabel('claudeAssets.global'), undefined, 'off by default -> no summary row');
+    });
+
+    it('Working Directory summary excludes worktree copies (counted once, not double)', () => {
+      // A main CLAUDE.md and an identical copy under .claude/worktrees/<name>/: the
+      // worktree copy renders under a separate "worktrees" folder, so it must not
+      // inflate the active-context banner.
+      const root = '/ws/proj';
+      const content = '# rules\n'.repeat(80);
+      const mkClaudeMd = (filePath: string): ClaudeAsset => ({
+        type: AssetType.ClaudeMd, name: 'CLAUDE.md', filePath,
+        scope: AssetScope.Project, rootPath: root, description: undefined,
+        tokenUsage: computeTokenUsage(AssetType.ClaudeMd, content)
+      });
+      const main = mkClaudeMd(path.join(root, 'CLAUDE.md'));
+      const worktree = mkClaudeMd(path.join(root, '.claude', 'worktrees', 'agent-x', 'CLAUDE.md'));
+
+      const provider = new AssetTreeProvider('working-directory');
+      provider.update([main, worktree]);
+
+      // Only the main copy counts -- not main + worktree.
+      assert.deepStrictEqual(provider.getContextSummary(), main.tokenUsage);
+    });
+  });
+
+  describe('worktree visibility toggle (Working Directory only)', () => {
+    const root = '/ws/proj';
+    const mkAgent = (filePath: string): ClaudeAsset => ({
+      type: AssetType.Subagent, name: 'ops', filePath,
+      scope: AssetScope.Project, description: undefined, rootPath: root,
+      tokenUsage: computeTokenUsage(AssetType.Subagent, '---\nname: ops\ndescription: d\n---\nbody')
+    });
+    const main = mkAgent(path.join(root, '.claude', 'agents', 'ops.md'));
+    const worktree = mkAgent(path.join(root, '.claude', 'worktrees', 'agent-x', '.claude', 'agents', 'ops.md'));
+
+    const hasWorktreesFolder = (provider: AssetTreeProvider): boolean =>
+      (provider.getChildren() as Array<{ label?: string }>).some(n => n.label === 'worktrees');
+
+    it('hides the worktrees folder by default', () => {
+      const provider = new AssetTreeProvider('working-directory');
+      provider.update([main, worktree]);
+      assert.strictEqual(hasWorktreesFolder(provider), false, 'worktrees folder hidden by default');
+    });
+
+    it('shows the worktrees folder once the toggle is enabled', () => {
+      harness.config['claudeAssets.showWorktrees'] = true;
+      const provider = new AssetTreeProvider('working-directory');
+      provider.update([main, worktree]);
+      assert.strictEqual(hasWorktreesFolder(provider), true, 'worktrees folder shown when enabled');
+    });
+
+    it('show/hide commands persist the setting and flip the title-bar context key', async () => {
+      const lastWtContext = () =>
+        [...harness.executed].reverse().find(e => e.command === 'setContext' && e.args[0] === 'claudeAssets.worktreesEnabled');
+
+      await exec('claudeAssets.showWorktrees');
+      assert.strictEqual(harness.config['claudeAssets.showWorktrees'], true, 'setting persisted on');
+      assert.ok(lastWtContext()?.args[1] === true, 'context key set true');
+
+      await exec('claudeAssets.hideWorktrees');
+      assert.strictEqual(harness.config['claudeAssets.showWorktrees'], false, 'setting persisted off');
+      assert.ok(lastWtContext()?.args[1] === false, 'context key set false');
+    });
+  });
+
+  describe('token legend', () => {
+    it('explains what (a) and (d) mean', async () => {
+      await exec('claudeAssets.tokenLegend');
+      const msg = lastMessage();
+      assert.ok(msg, 'an information message was shown');
+      assert.strictEqual(msg!.level, 'info');
+      const detail = msg!.detail ?? '';
+      assert.ok(/\(a\)/.test(detail) && /always loaded/i.test(detail), `detail explains (a): ${detail}`);
+      assert.ok(/\(d\)/.test(detail) && /on demand/i.test(detail), `detail explains (d): ${detail}`);
+    });
+  });
+
+  describe('token usage toggle (per-section)', () => {
+    beforeEach(() => {
+      writeFile(path.join(claudeDir, 'CLAUDE.md'), '# rules\n'.repeat(80));
+    });
+
+    const lastSetContext = (key: string) =>
+      [...harness.executed].reverse().find(e => e.command === 'setContext' && e.args[0] === key);
+
+    it('Global disable hides the Global summary row and persists only the Global setting', async () => {
+      // Tokens are off by default; turn the Global section on so there is a summary to hide.
+      await exec('claudeAssets.enableTokenUsageGlobal');
+      assert.ok(summaryLabel('claudeAssets.global'), 'Global summary present when enabled');
+
+      await exec('claudeAssets.disableTokenUsageGlobal');
+      assert.strictEqual(harness.config['claudeAssets.showTokenUsageGlobal'], false, 'Global setting off');
+      // Working Directory setting must be untouched by the Global command.
+      assert.strictEqual(harness.config['claudeAssets.showTokenUsageWorkingDirectory'], undefined, 'WD setting untouched');
+      assert.strictEqual(summaryLabel('claudeAssets.global'), undefined, 'Global summary hidden');
+
+      await exec('claudeAssets.enableTokenUsageGlobal');
+      assert.strictEqual(harness.config['claudeAssets.showTokenUsageGlobal'], true, 'Global setting on');
+      assert.ok(summaryLabel('claudeAssets.global'), 'Global summary restored');
+    });
+
+    it('each section drives its own context key independently', async () => {
+      await exec('claudeAssets.enableTokenUsageGlobal');
+      await exec('claudeAssets.disableTokenUsageGlobal');
+      const g = lastSetContext('claudeAssets.tokenUsageEnabledGlobal');
+      assert.ok(g && g.args[1] === false, 'Global key set false');
+      // The Working Directory key was set on activation (default off) and never touched
+      // by the Global commands -- it retains its activation value, independent of Global.
+      const w = lastSetContext('claudeAssets.tokenUsageEnabledWorkingDirectory');
+      assert.ok(w && w.args[1] === false, 'WD key retains its activation value (independent)');
+    });
+  });
+
+  describe('non-asset files show on-demand tokens', () => {
+    it('a reference file in a skill folder gets an on-demand (d) count', () => {
+      // Token display is off by default; enable it so the fs nodes carry token text.
+      harness.config['claudeAssets.showTokenUsageGlobal'] = true;
+      const skillsDir = path.join(claudeDir, 'skills');
+      const skillDir = path.join(skillsDir, 'my-skill');
+      const skillMd = path.join(skillDir, 'SKILL.md');
+      writeFile(skillMd, '---\nname: my-skill\ndescription: does a thing\n---\nthe skill body');
+      writeFile(path.join(skillDir, 'reference.md'), 'reference material '.repeat(80));
+
+      const asset: ClaudeAsset = {
+        type: AssetType.Skill, name: 'my-skill', filePath: skillMd,
+        scope: AssetScope.Global, description: 'does a thing', rootPath: claudeDir,
+        tokenUsage: computeTokenUsage(AssetType.Skill, fs.readFileSync(skillMd, 'utf8'))
+      };
+      const provider = new AssetTreeProvider('global');
+      provider.update([asset]);
+
+      const roots = provider.getChildren() as Array<{ assetType?: AssetType }>;
+      const skillsGroup = roots.find(n => n.assetType === AssetType.Skill);
+      assert.ok(skillsGroup, 'skills group present');
+      const folders = provider.getChildren(skillsGroup as never) as Array<{ dirPath?: string }>;
+      const myFolder = folders.find(n => n.dirPath === skillDir);
+      assert.ok(myFolder, 'skill folder present');
+      const files = provider.getChildren(myFolder as never) as Array<{ filePath?: string; description?: string }>;
+
+      const ref = files.find(n => n.filePath?.endsWith('reference.md'));
+      assert.ok(ref, 'reference.md listed');
+      assert.ok(/\(d\)/.test(ref!.description ?? ''), `reference shows on-demand: ${ref!.description}`);
+      assert.ok(!/\(a\)/.test(ref!.description ?? ''), 'reference has no always-loaded portion');
+
+      const skillFile = files.find(n => n.filePath?.endsWith('SKILL.md'));
+      assert.ok(/\(a\)/.test(skillFile!.description ?? ''), `SKILL.md shows always: ${skillFile!.description}`);
+    });
+  });
+
+  describe('re-scan on save', () => {
+    const settle = () => new Promise(resolve => setTimeout(resolve, 220));
+
+    it('recomputes token usage when a tracked file is saved', async () => {
+      // Tokens are off by default; enable so the summary reflects the file's size.
+      harness.config['claudeAssets.showTokenUsageGlobal'] = true;
+      const claudeMd = path.join(claudeDir, 'CLAUDE.md');
+      writeFile(claudeMd, '# rules\n');
+      await exec('claudeAssets.refresh');
+      const before = summaryLabel('claudeAssets.global');
+      assert.ok(before, 'summary present after initial scan');
+
+      // Grow the file on disk, then simulate the editor save event.
+      writeFile(claudeMd, '# rules\n' + 'a lot more always-loaded content. '.repeat(500));
+      fireDidSave(claudeMd);
+      await settle();
+
+      const after = summaryLabel('claudeAssets.global');
+      assert.notStrictEqual(after, before, 'summary should change after the file grows and is saved');
+      assert.ok(/k tk \(a\)/.test(after!), `always-loaded total should now be in the thousands: ${after}`);
+    });
+
+    it('ignores saves outside the tracked scan roots', async () => {
+      harness.config['claudeAssets.showTokenUsageGlobal'] = true;
+      writeFile(path.join(claudeDir, 'CLAUDE.md'), '# rules\n');
+      await exec('claudeAssets.refresh');
+      const before = summaryLabel('claudeAssets.global');
+
+      fireDidSave(path.join(home, 'unrelated', 'file.md'));
+      await settle();
+
+      assert.strictEqual(summaryLabel('claudeAssets.global'), before, 'unrelated save must not change anything');
     });
   });
 });

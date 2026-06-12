@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { AssetType, AssetScope, ClaudeAsset } from '../core/types';
+import { AssetType, AssetScope, ClaudeAsset, TokenUsage } from '../core/types';
 import { getSectionInfoByAssetType } from '../core/sectionInfo';
+import { describeTokenUsage, tokenUsageTooltip, tokenLegendLines } from '../core/tokenCount';
 import {
   NodeKind,
   ContainerNodeDescriptor,
@@ -12,7 +13,26 @@ import {
   WorktreeNameFolderNodeDescriptor
 } from './nodeDescriptors';
 
-export type TreeNode = ContainerNode | PluginFolderNode | GroupNode | AssetNode | WorktreesFolderNode | WorktreeNameFolderNode | FsDirNode | FsFileNode;
+export type TreeNode = ContainerNode | PluginFolderNode | GroupNode | AssetNode | WorktreesFolderNode | WorktreeNameFolderNode | FsDirNode | FsFileNode | TokenSummaryNode;
+
+/**
+ * The section's aggregate token total, rendered as the first row of a view (under
+ * the Global / Working Directory header) with an info icon. The view message banner
+ * can't carry an icon or hover, so the summary lives here: the label shows the
+ * "(a)"/"(d)" totals and the hover tooltip (plus a click) explains what they mean.
+ */
+export class TokenSummaryNode extends vscode.TreeItem {
+  readonly kind = NodeKind.TokenSummary;
+
+  constructor(usage: TokenUsage) {
+    super(describeTokenUsage(usage) ?? '', vscode.TreeItemCollapsibleState.None);
+    this.iconPath = new vscode.ThemeIcon('info');
+    this.contextValue = 'tokenSummary';
+    // The (a)/(d) legend lives in the hover tooltip only -- the row itself is not
+    // clickable, so selecting it does nothing.
+    this.tooltip = new vscode.MarkdownString(tokenLegendLines().join('  \n'));
+  }
+}
 
 export class ContainerNode extends vscode.TreeItem {
   readonly kind = NodeKind.Container;
@@ -33,8 +53,15 @@ export class ContainerNode extends vscode.TreeItem {
       this.resourceUri = vscode.Uri.file(desc.dirPath);
       this.tooltip = desc.dirPath;
     }
-    if (desc.description !== undefined) {
-      this.description = desc.description;
+    // Append the enabled-plugin token total to the plugins root / marketplace summary.
+    const usage = describeTokenUsage(desc.tokenTotals);
+    const descParts = [desc.description, usage].filter((p): p is string => !!p);
+    if (descParts.length) {
+      this.description = descParts.join(' · ');
+    }
+    const legend = tokenUsageTooltip(desc.tokenTotals);
+    if (legend) {
+      this.tooltip = this.tooltip ? `${String(this.tooltip)}\n\n${legend}` : legend;
     }
     this.children = desc.children.map(child => {
       if (child.kind === NodeKind.Container) {
@@ -81,13 +108,16 @@ export class PluginFolderNode extends vscode.TreeItem {
     } else {
       this.iconPath = new vscode.ThemeIcon('folder');
     }
-    if (desc.tooltip !== undefined) {
-      this.tooltip = desc.tooltip;
-    } else if (desc.dirPath !== undefined) {
-      this.tooltip = desc.dirPath;
+    const baseTooltip = desc.tooltip ?? desc.dirPath;
+    const legend = tokenUsageTooltip(desc.tokenTotals);
+    if (baseTooltip !== undefined || legend !== undefined) {
+      this.tooltip = [baseTooltip, legend].filter(Boolean).join('\n\n');
     }
-    if (desc.description !== undefined) {
-      this.description = desc.description;
+    // Append the (enabled) plugin's token total to its version/status line.
+    const usage = describeTokenUsage(desc.tokenTotals);
+    const descParts = [desc.description, usage].filter((p): p is string => !!p);
+    if (descParts.length) {
+      this.description = descParts.join(' · ');
     }
     this.children = desc.children.map(c => new GroupNode(c));
   }
@@ -108,6 +138,10 @@ export class GroupNode extends vscode.TreeItem {
     this.dirPath = desc.dirPath;
     this.createTargetDir = desc.createTargetDir;
     this.children = desc.children.map(c => new AssetNode(c));
+    const total = describeTokenUsage(desc.tokenTotals);
+    if (total !== undefined) {
+      this.description = total;
+    }
     switch (desc.assetType) {
       case AssetType.Skill:
         this.contextValue = 'assetGroupSkills';
@@ -128,10 +162,16 @@ export class GroupNode extends vscode.TreeItem {
         this.contextValue = 'assetGroup';
     }
     const info = getSectionInfoByAssetType(desc.assetType);
+    const legend = tokenUsageTooltip(desc.tokenTotals);
     if (info) {
       const md = new vscode.MarkdownString(`**${info.title}** — ${info.summary}\n\n[Learn more](${info.docUrl})`);
       md.isTrusted = true;
+      if (legend) {
+        md.appendMarkdown(`\n\n${legend.split('\n').join('  \n')}`);
+      }
       this.tooltip = md;
+    } else if (legend) {
+      this.tooltip = legend;
     }
   }
 }
@@ -147,12 +187,17 @@ export class FsDirNode extends vscode.TreeItem {
 
   // `underPlugins` entries are Claude-managed (use Uninstall, not Delete) -> a distinct
   // contextValue keeps them out of the Delete menu while still allowing Reveal.
-  constructor(dirPath: string, label: string, underPlugins = false) {
+  constructor(dirPath: string, label: string, underPlugins = false, tokenUsage?: TokenUsage) {
     super(label, vscode.TreeItemCollapsibleState.Collapsed);
     this.dirPath = dirPath;
     this.resourceUri = vscode.Uri.file(dirPath);
-    this.tooltip = dirPath;
     this.contextValue = underPlugins ? 'fsDirPlugin' : 'fsDir';
+    const usage = describeTokenUsage(tokenUsage);
+    if (usage !== undefined) {
+      this.description = usage;
+    }
+    const legend = tokenUsageTooltip(tokenUsage);
+    this.tooltip = legend ? `${dirPath}\n\n${legend}` : dirPath;
   }
 }
 
@@ -161,11 +206,16 @@ export class FsFileNode extends vscode.TreeItem {
   readonly kind = NodeKind.FsFile;
   readonly filePath: string;
 
-  constructor(filePath: string, label: string, underPlugins = false) {
+  constructor(filePath: string, label: string, underPlugins = false, tokenUsage?: TokenUsage) {
     super(label, vscode.TreeItemCollapsibleState.None);
     this.filePath = filePath;
     this.resourceUri = vscode.Uri.file(filePath);
-    this.tooltip = filePath;
+    const usage = describeTokenUsage(tokenUsage);
+    if (usage !== undefined) {
+      this.description = usage;
+    }
+    const legend = tokenUsageTooltip(tokenUsage);
+    this.tooltip = legend ? `${filePath}\n\n${legend}` : filePath;
     const isMarkdown = label.toLowerCase().endsWith('.md');
     this.contextValue = isMarkdown
       ? (underPlugins ? 'fsFileMdPlugin' : 'fsFileMd')
@@ -188,9 +238,14 @@ export class AssetNode extends vscode.TreeItem {
     super(desc.label, vscode.TreeItemCollapsibleState.None);
     this.asset = desc.asset;
     this.filePath = desc.filePath;
-    this.tooltip = desc.tooltip;
     this.resourceUri = vscode.Uri.file(desc.filePath);
     this.contextValue = desc.contextValue;
+    const usage = describeTokenUsage(desc.tokenUsage);
+    if (usage !== undefined) {
+      this.description = usage;
+    }
+    const legend = tokenUsageTooltip(desc.tokenUsage);
+    this.tooltip = legend ? `${desc.tooltip}\n\n${legend}` : desc.tooltip;
     this.command = {
       command: desc.commandId,
       title: 'Open',

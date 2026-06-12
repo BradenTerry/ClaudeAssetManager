@@ -1311,7 +1311,7 @@ describe('buildTreeNodes -- known marketplaces (always visible)', () => {
 // AC-CNT: enabled-count summary on Plugins root and per-marketplace containers
 // ---------------------------------------------------------------------------
 
-describe('buildTreeNodes -- enabled-count summary (X/Y plugins enabled)', () => {
+describe('buildTreeNodes -- enabled-count summary (X/Y enabled)', () => {
   // Local meta builder with enabled map support (reuses makePluginMetaWithEnabled pattern from AC-EN tests)
   function makePluginMetaWithEnabled(
     installed: Record<string, InstalledPluginInfo>,
@@ -1333,7 +1333,7 @@ describe('buildTreeNodes -- enabled-count summary (X/Y plugins enabled)', () => 
     return (plugins.children as ContainerNodeDescriptor[]).find(c => c.containerKind === 'marketplace' && c.label === 'mk');
   }
 
-  it('AC-CNT-1: 2 installed plugins (1 disabled) -> Plugins root description includes "1/2 plugins enabled"', () => {
+  it('AC-CNT-1: 2 installed plugins (1 disabled) -> Plugins root description includes "1/2 enabled"', () => {
     const infoA = makeInstalledInfo('a', '/p/cache/mk/a/1.0');
     const infoB = makeInstalledInfo('b', '/p/cache/mk/b/1.0');
     const enabledMap = new Map<string, boolean>([['a@mk', true], ['b@mk', false]]);
@@ -1342,12 +1342,12 @@ describe('buildTreeNodes -- enabled-count summary (X/Y plugins enabled)', () => 
     const plugins = getPluginsContainer(nodes)!;
     assert.ok(plugins, 'expected Plugins container');
     assert.ok(
-      plugins.description && plugins.description.includes('1/2 plugins enabled'),
-      `Plugins root description should include "1/2 plugins enabled", got: "${plugins.description}"`
+      plugins.description && plugins.description.includes('1/2 enabled'),
+      `Plugins root description should include "1/2 enabled", got: "${plugins.description}"`
     );
   });
 
-  it('AC-CNT-2: marketplace container with 2 installed plugins (1 disabled) -> marketplace description includes "1/2 plugins enabled"', () => {
+  it('AC-CNT-2: marketplace container with 2 installed plugins (1 disabled) -> marketplace description includes "1/2 enabled"', () => {
     const infoA = makeInstalledInfo('a', '/p/cache/mk/a/1.0');
     const infoB = makeInstalledInfo('b', '/p/cache/mk/b/1.0');
     const enabledMap = new Map<string, boolean>([['a@mk', true], ['b@mk', false]]);
@@ -1356,12 +1356,12 @@ describe('buildTreeNodes -- enabled-count summary (X/Y plugins enabled)', () => 
     const mk = getMkContainer(nodes)!;
     assert.ok(mk, 'expected mk marketplace container');
     assert.ok(
-      mk.description && mk.description.includes('1/2 plugins enabled'),
-      `Marketplace description should include "1/2 plugins enabled", got: "${mk.description}"`
+      mk.description && mk.description.includes('1/2 enabled'),
+      `Marketplace description should include "1/2 enabled", got: "${mk.description}"`
     );
   });
 
-  it('AC-CNT-3: marketplace with 1 outdated plugin AND 1 disabled plugin -> description contains both "plugins enabled" and "update"', () => {
+  it('AC-CNT-3: marketplace with 1 outdated plugin AND 1 disabled plugin -> description contains both "enabled" and "update"', () => {
     const infoA = makeInstalledInfo('a', '/p/cache/mk/a/1.0');
     const infoB = makeInstalledInfo('b', '/p/cache/mk/b/1.0');
     // a is outdated, b is disabled
@@ -1371,8 +1371,8 @@ describe('buildTreeNodes -- enabled-count summary (X/Y plugins enabled)', () => 
     const mk = getMkContainer(nodes)!;
     assert.ok(mk, 'expected mk marketplace container');
     assert.ok(
-      mk.description && mk.description.includes('plugins enabled'),
-      `description should contain "plugins enabled", got: "${mk.description}"`
+      mk.description && mk.description.includes('enabled'),
+      `description should contain "enabled", got: "${mk.description}"`
     );
     assert.ok(
       mk.description && mk.description.includes('update'),
@@ -1380,7 +1380,7 @@ describe('buildTreeNodes -- enabled-count summary (X/Y plugins enabled)', () => 
     );
   });
 
-  it('AC-CNT-4: meta WITHOUT enabled map -> Plugins root description does NOT include "plugins enabled"', () => {
+  it('AC-CNT-4: meta WITHOUT enabled map -> Plugins root description does NOT include "enabled"', () => {
     const infoA = makeInstalledInfo('a', '/p/cache/mk/a/1.0');
     const infoB = makeInstalledInfo('b', '/p/cache/mk/b/1.0');
     // No enabled map provided
@@ -1389,8 +1389,8 @@ describe('buildTreeNodes -- enabled-count summary (X/Y plugins enabled)', () => 
     const plugins = getPluginsContainer(nodes)!;
     assert.ok(plugins, 'expected Plugins container');
     assert.ok(
-      !plugins.description || !plugins.description.includes('plugins enabled'),
-      `Plugins root description should NOT include "plugins enabled", got: "${plugins.description}"`
+      !plugins.description || !plugins.description.includes('enabled'),
+      `Plugins root description should NOT include "enabled", got: "${plugins.description}"`
     );
   });
 
@@ -1845,10 +1845,10 @@ describe('buildTreeNodes -- project-scoped plugins under Working Directory', () 
     // Summary counts: 1/2 enabled (a=enabled, b=disabled)
     const pluginsRoot = getProjectPluginsFolder(nodes)!;
     const mkFolder = (pluginsRoot.children as ContainerNodeDescriptor[]).find(c => c.label === 'mk')!;
-    assert.ok(mkFolder.description && mkFolder.description.includes('1/2 plugins enabled'),
-      `marketplace description should include "1/2 plugins enabled", got: "${mkFolder.description}"`);
-    assert.ok(pluginsRoot.description && pluginsRoot.description.includes('1/2 plugins enabled'),
-      `root description should include "1/2 plugins enabled", got: "${pluginsRoot.description}"`);
+    assert.ok(mkFolder.description && mkFolder.description.includes('1/2 enabled'),
+      `marketplace description should include "1/2 enabled", got: "${mkFolder.description}"`);
+    assert.ok(pluginsRoot.description && pluginsRoot.description.includes('1/2 enabled'),
+      `root description should include "1/2 enabled", got: "${pluginsRoot.description}"`);
   });
 
   // ---------------------------------------------------------------------------
@@ -2234,10 +2234,10 @@ describe('buildTreeNodes -- scope filtering (Global shows only user-scope instal
     const plugins = getPluginsContainer(nodes)!;
     assert.ok(plugins, 'expected Plugins container');
 
-    // Root description: only user-plugin counts -> "1/1 plugins enabled", NOT "2/2" or "1/2"
+    // Root description: only user-plugin counts -> "1/1 enabled", NOT "2/2" or "1/2"
     assert.ok(
-      plugins.description && plugins.description.includes('1/1 plugins enabled'),
-      `root description should say "1/1 plugins enabled", got: "${plugins.description}"`
+      plugins.description && plugins.description.includes('1/1 enabled'),
+      `root description should say "1/1 enabled", got: "${plugins.description}"`
     );
 
     // Root updates: proj-plugin (project-scope) in outdated set must NOT appear in global count
@@ -2250,8 +2250,8 @@ describe('buildTreeNodes -- scope filtering (Global shows only user-scope instal
     const mkFolder = (plugins.children as ContainerNodeDescriptor[]).find(c => c.label === MK);
     assert.ok(mkFolder, 'expected marketplace folder');
     assert.ok(
-      mkFolder!.description && mkFolder!.description.includes('1/1 plugins enabled'),
-      `marketplace description should say "1/1 plugins enabled", got: "${mkFolder!.description}"`
+      mkFolder!.description && mkFolder!.description.includes('1/1 enabled'),
+      `marketplace description should say "1/1 enabled", got: "${mkFolder!.description}"`
     );
     assert.ok(
       !mkFolder!.description || !mkFolder!.description.includes('update'),

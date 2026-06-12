@@ -193,6 +193,66 @@
         "title": "What is this?",
         "icon": "$(info)",
         "category": "Claude Asset Manager"
+      },
+      {
+        "command": "claudeAssets.enableTokenUsageGlobal",
+        "title": "Show Token Counts",
+        "icon": {
+          "light": "media/tokens-off-light.svg",
+          "dark": "media/tokens-off-dark.svg"
+        },
+        "category": "Claude Asset Manager"
+      },
+      {
+        "command": "claudeAssets.disableTokenUsageGlobal",
+        "title": "Hide Token Counts",
+        "icon": {
+          "light": "media/tokens-on-light.svg",
+          "dark": "media/tokens-on-dark.svg"
+        },
+        "category": "Claude Asset Manager"
+      },
+      {
+        "command": "claudeAssets.enableTokenUsageWorkingDirectory",
+        "title": "Show Token Counts",
+        "icon": {
+          "light": "media/tokens-off-light.svg",
+          "dark": "media/tokens-off-dark.svg"
+        },
+        "category": "Claude Asset Manager"
+      },
+      {
+        "command": "claudeAssets.disableTokenUsageWorkingDirectory",
+        "title": "Hide Token Counts",
+        "icon": {
+          "light": "media/tokens-on-light.svg",
+          "dark": "media/tokens-on-dark.svg"
+        },
+        "category": "Claude Asset Manager"
+      },
+      {
+        "command": "claudeAssets.tokenLegend",
+        "title": "Token Counts: What do (a) and (d) mean?",
+        "icon": "$(info)",
+        "category": "Claude Asset Manager"
+      },
+      {
+        "command": "claudeAssets.showWorktrees",
+        "title": "Show Worktrees",
+        "icon": {
+          "light": "media/worktree-off-light.svg",
+          "dark": "media/worktree-off-dark.svg"
+        },
+        "category": "Claude Asset Manager"
+      },
+      {
+        "command": "claudeAssets.hideWorktrees",
+        "title": "Hide Worktrees",
+        "icon": {
+          "light": "media/worktree-on-light.svg",
+          "dark": "media/worktree-on-dark.svg"
+        },
+        "category": "Claude Asset Manager"
       }
     ],
     "menus": {
@@ -200,7 +260,37 @@
         {
           "command": "claudeAssets.refresh",
           "when": "view == claudeAssets.global || view == claudeAssets.workingDirectory",
-          "group": "navigation"
+          "group": "navigation@3"
+        },
+        {
+          "command": "claudeAssets.enableTokenUsageGlobal",
+          "when": "view == claudeAssets.global && !claudeAssets.tokenUsageEnabledGlobal",
+          "group": "navigation@1"
+        },
+        {
+          "command": "claudeAssets.disableTokenUsageGlobal",
+          "when": "view == claudeAssets.global && claudeAssets.tokenUsageEnabledGlobal",
+          "group": "navigation@1"
+        },
+        {
+          "command": "claudeAssets.enableTokenUsageWorkingDirectory",
+          "when": "view == claudeAssets.workingDirectory && !claudeAssets.tokenUsageEnabledWorkingDirectory",
+          "group": "navigation@1"
+        },
+        {
+          "command": "claudeAssets.disableTokenUsageWorkingDirectory",
+          "when": "view == claudeAssets.workingDirectory && claudeAssets.tokenUsageEnabledWorkingDirectory",
+          "group": "navigation@1"
+        },
+        {
+          "command": "claudeAssets.showWorktrees",
+          "when": "view == claudeAssets.workingDirectory && !claudeAssets.worktreesEnabled",
+          "group": "navigation@2"
+        },
+        {
+          "command": "claudeAssets.hideWorktrees",
+          "when": "view == claudeAssets.workingDirectory && claudeAssets.worktreesEnabled",
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
@@ -401,6 +491,21 @@
           "default": 6,
           "minimum": 1,
           "description": "Maximum directory depth to search for a .claude directory. Once a .claude directory is found, its entire contents are scanned regardless of this limit."
+        },
+        "claudeAssets.showTokenUsageGlobal": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show estimated token counts in the Global section (assets, group totals, and banner). Toggle from the Global view title bar (the eye icon)."
+        },
+        "claudeAssets.showTokenUsageWorkingDirectory": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show estimated token counts in the Working Directory section (assets, group totals, and banner). Toggle from the Working Directory view title bar (the eye icon)."
+        },
+        "claudeAssets.showWorktrees": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show git worktrees in the Working Directory section. Hidden by default: worktrees are separate checkouts that usually duplicate the main tree. Toggle from the Working Directory view title bar (the tree icon)."
         },
         "claudeAssets.markdownOpenMode": {
           "type": "string",

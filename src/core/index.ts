@@ -7,3 +7,4 @@ export * from './containerDerivations';
 export * from './pluginMetadata';
 export * from './deletePlan';
 export * from './deleteWithRetry';
+export * from './tokenCount';

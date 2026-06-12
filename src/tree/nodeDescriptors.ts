@@ -1,5 +1,6 @@
 import * as path from 'path';
-import { AssetType, AssetScope, ClaudeAsset } from '../core/types';
+import { AssetType, AssetScope, ClaudeAsset, TokenUsage } from '../core/types';
+import { sumTokenUsage } from '../core/tokenCount';
 import { InstalledPluginInfo, MarketplaceInfo } from '../core/pluginMetadata';
 import { derivePluginName, deriveProjectInfo, deriveMemoryProject, deriveMemoryProjectDir, isRootLevelAsset } from '../core/containerDerivations';
 
@@ -11,7 +12,8 @@ export enum NodeKind {
   WorktreesFolder = 'WorktreesFolder',
   WorktreeNameFolder = 'WorktreeNameFolder',
   FsDir = 'FsDir',
-  FsFile = 'FsFile'
+  FsFile = 'FsFile',
+  TokenSummary = 'TokenSummary'
 }
 
 // ---------------------------------------------------------------------------
@@ -36,6 +38,8 @@ export interface ContainerNodeDescriptor {
   contextValue?: string;
   /** Backing real directory, when this container maps to one (plugins/, projects/) -- enables Reveal. */
   dirPath?: string;
+  /** Summed token usage of enabled plugins under this container (plugins root / marketplace). */
+  tokenTotals?: TokenUsage;
 }
 
 export interface WorktreesFolderNodeDescriptor {
@@ -72,6 +76,8 @@ export interface PluginFolderNodeDescriptor {
   contextValue?: string;
   /** Multi-line tooltip (plain \n). Set on WD plugin nodes; includes team/local/effective breakdown. */
   tooltip?: string;
+  /** Summed token usage of this plugin's assets, set only when the plugin is enabled. */
+  tokenTotals?: TokenUsage;
 }
 
 /**
@@ -112,6 +118,8 @@ export interface GroupNodeDescriptor {
    * (e.g. ~/.claude/skills). Set on Skill/Subagent/Command groups.
    */
   createTargetDir?: string;
+  /** Summed token usage across this group's assets (for the group's right-aligned total). */
+  tokenTotals?: TokenUsage;
 }
 
 export interface AssetNodeDescriptor {
@@ -127,9 +135,55 @@ export interface AssetNodeDescriptor {
   commandId: string;
   /** Arguments to pass to the default command */
   commandArgs: [string];
+  /** Estimated upfront/rest token usage for this asset (for the right-aligned description). */
+  tokenUsage?: TokenUsage;
 }
 
 export type TopLevelNode = ContainerNodeDescriptor;
+
+type AnyDescriptor =
+  | ContainerNodeDescriptor
+  | PluginFolderNodeDescriptor
+  | AssetNodeDescriptor
+  | GroupNodeDescriptor
+  | WorktreesFolderNodeDescriptor
+  | WorktreeNameFolderNodeDescriptor;
+
+/** Recursively clear token-usage fields so the section renders without token text. */
+function stripTokenUsage(node: AnyDescriptor): void {
+  if (node.kind === NodeKind.Asset) {
+    node.tokenUsage = undefined;
+    return;
+  }
+  if (node.kind === NodeKind.Group || node.kind === NodeKind.PluginFolder || node.kind === NodeKind.Container) {
+    (node as { tokenTotals?: TokenUsage }).tokenTotals = undefined;
+  }
+  const children = (node as { children?: AnyDescriptor[] }).children;
+  if (children) {
+    for (const child of children) stripTokenUsage(child);
+  }
+}
+
+/** Sum usages, returning undefined when the total is zero (so nothing renders). */
+function nonZeroSum(usages: (TokenUsage | undefined)[]): TokenUsage | undefined {
+  const total = sumTokenUsage(usages);
+  return total.total > 0 ? total : undefined;
+}
+
+/** Sum token usage of the assets that live under a plugin's install directory. */
+function sumPluginTokens(installPath: string | undefined, pluginAssets: ClaudeAsset[]): TokenUsage | undefined {
+  if (!installPath) return undefined;
+  const root = installPath.replace(/\\/g, '/');
+  const total = sumTokenUsage(
+    pluginAssets
+      .filter(a => {
+        const p = a.filePath.replace(/\\/g, '/');
+        return p === root || p.startsWith(root + '/');
+      })
+      .map(a => a.tokenUsage)
+  );
+  return total.total > 0 ? total : undefined;
+}
 
 // ---------------------------------------------------------------------------
 // Project children builder (handles main vs. worktree split)
@@ -239,7 +293,8 @@ function buildAssetNode(asset: ClaudeAsset): AssetNodeDescriptor {
     filePath: asset.filePath,
     contextValue: buildContextValue(asset),
     commandId,
-    commandArgs: [asset.filePath]
+    commandArgs: [asset.filePath],
+    tokenUsage: asset.tokenUsage
   };
 }
 
@@ -361,7 +416,8 @@ function buildTypeGroups(
           label: TYPE_LABELS[type]!,
           children: [],
           dirPath,
-          createTargetDir: dirPath
+          createTargetDir: dirPath,
+          tokenTotals: sumTokenUsage(sorted.map(a => a.tokenUsage))
         });
         continue;
       }
@@ -373,7 +429,8 @@ function buildTypeGroups(
       kind: NodeKind.Group,
       assetType: type,
       label: TYPE_LABELS[type]!,
-      children: sorted.map(buildAssetNode)
+      children: sorted.map(buildAssetNode),
+      tokenTotals: sumTokenUsage(sorted.map(a => a.tokenUsage))
     };
     // Workflows are read-only -- no create target even though they have a segment dir.
     if (segment && type !== AssetType.Workflow) {
@@ -438,11 +495,11 @@ function buildMemoryProjectsFolder(memoryAssets: ClaudeAsset[]): ContainerNodeDe
 // Enabled-count summary helpers
 // ---------------------------------------------------------------------------
 
-/** Returns "X/Y plugins enabled" for a set of installed plugins, or undefined when state unknown or no plugins. */
+/** Returns "X/Y enabled" for a set of installed plugins, or undefined when state unknown or no plugins. */
 function enabledSummary(infos: InstalledPluginInfo[], enabledMap?: Map<string, boolean>): string | undefined {
   if (!enabledMap || infos.length === 0) return undefined;
   const enabled = infos.filter(i => enabledMap.get(i.id) !== false).length;
-  return `${enabled}/${infos.length} plugins enabled`;
+  return `${enabled}/${infos.length} enabled`;
 }
 
 /** Joins non-empty parts with " · "; returns undefined when all parts are empty. */
@@ -468,7 +525,8 @@ function buildProjectPluginsFolder(
   teamEnabled: Map<string, boolean>,
   localEnabled: Map<string, boolean>,
   outdated: Set<string>,
-  claudeDir: string | undefined
+  claudeDir: string | undefined,
+  pluginAssets: ClaudeAsset[]
 ): ContainerNodeDescriptor | undefined {
   // Filter to project/local installs only -- these are the WD-owned installs
   const projectInstalls = new Map(
@@ -530,7 +588,8 @@ function buildProjectPluginsFolder(
       scope: info.scope as 'project' | 'local',
       contextValue: `assetProjectPluginFolderTeam${teamTok}Personal${personalTok}`,
       dirPath: info.installPath || undefined,
-      tooltip
+      tooltip,
+      tokenTotals: effective ? sumPluginTokens(info.installPath, pluginAssets) : undefined
     };
   };
 
@@ -568,14 +627,16 @@ function buildProjectPluginsFolder(
         ? `${mkOutdated} update${mkOutdated === 1 ? '' : 's'} available ↓`
         : undefined;
       const mkDescription = joinDesc([enabledSummary(infos, effectiveMap), updatesText]);
+      const folders = infos.map(buildPluginFolder);
       return {
         kind: NodeKind.Container as NodeKind.Container,
         containerKind: 'marketplace' as const,
         label: mk,
-        children: infos.map(buildPluginFolder),
+        children: folders,
         description: mkDescription,
         contextValue: 'assetProjectMarketplace',
-        dirPath: mkDir
+        dirPath: mkDir,
+        tokenTotals: nonZeroSum(folders.map(f => f.tokenTotals))
       };
     });
 
@@ -591,7 +652,8 @@ function buildProjectPluginsFolder(
     children: marketplaceFolders,
     contextValue: 'assetProjectPluginsRoot',
     dirPath: claudeDir,
-    description: joinDesc([enabledSummary(allProjectInstalls, effectiveMap), rootUpdatesText])
+    description: joinDesc([enabledSummary(allProjectInstalls, effectiveMap), rootUpdatesText]),
+    tokenTotals: nonZeroSum(marketplaceFolders.map(m => m.tokenTotals))
   };
 }
 
@@ -614,7 +676,7 @@ function buildProjectPluginsFolder(
  * when in the outdated set, the "update available" text + outdated flag.
  * When pluginMeta is omitted, the flat folder list is returned with no descriptions.
  */
-export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadataOptions): TopLevelNode[] {
+export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadataOptions, showTokenUsage = true): TopLevelNode[] {
   const nodes: TopLevelNode[] = [];
 
   // Normalize pluginMeta: treat missing, undefined, or partial object as empty maps/sets
@@ -701,7 +763,9 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
         description: descStr,
         outdated: isOut || undefined,
         enabled,
-        dirPath: info.installPath || undefined
+        dirPath: info.installPath || undefined,
+        // Only enabled plugins load into context; show their token total then.
+        tokenTotals: enabled === false ? undefined : sumPluginTokens(info.installPath, pluginAssets)
       };
     };
 
@@ -741,15 +805,17 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
         const mkDescription = infos.length === 0
           ? '(no plugins installed)'
           : joinDesc([enabledSummary(infos, enabledMap), updatesText]);
+        const folders = infos.map(buildPluginFolder);
         return {
           kind: NodeKind.Container as NodeKind.Container,
           containerKind: 'marketplace' as const,
           label: mk,
-          children: infos.map(buildPluginFolder),
+          children: folders,
           description: mkDescription,
           // Outdated variant gates the marketplace-level "Update Plugins" command.
           contextValue: mkOutdated > 0 ? 'assetMarketplaceOutdated' : 'assetMarketplace',
-          dirPath: mkDir
+          dirPath: mkDir,
+          tokenTotals: nonZeroSum(folders.map(f => f.tokenTotals))
         };
       });
 
@@ -773,7 +839,8 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
       description: joinDesc([enabledSummary(allUserInstalled, enabledMap), rootUpdates]),
       // Outdated variant gates the "Update All" command; both variants are reveal-able.
       contextValue: updatableCount > 0 ? 'assetPluginsRootOutdated' : 'assetPluginsRoot',
-      dirPath: pluginsRoot
+      dirPath: pluginsRoot,
+      tokenTotals: nonZeroSum(marketplaceFolders.map(m => m.tokenTotals))
     };
   } else if (pluginAssets.length > 0) {
     // Asset-derived fallback (no metadata): flat plugin folders with type-group children.
@@ -792,7 +859,11 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
       kind: NodeKind.PluginFolder as NodeKind.PluginFolder,
       pluginName,
       label: pluginName,
-      children: buildTypeGroups(byPlugin.get(pluginName)!) as GroupNodeDescriptor[]
+      children: buildTypeGroups(byPlugin.get(pluginName)!) as GroupNodeDescriptor[],
+      tokenTotals: (() => {
+        const t = sumTokenUsage(byPlugin.get(pluginName)!.map(a => a.tokenUsage));
+        return t.total > 0 ? t : undefined;
+      })()
     }));
     pluginsFolderNode = {
       kind: NodeKind.Container,
@@ -800,7 +871,8 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
       label: 'plugins',
       children: pluginFolders,
       contextValue: 'assetPluginsRoot',
-      dirPath: deriveSegmentRoot(pluginAssets[0].filePath, 'plugins')
+      dirPath: deriveSegmentRoot(pluginAssets[0].filePath, 'plugins'),
+      tokenTotals: nonZeroSum(pluginFolders.map(f => f.tokenTotals))
     };
   }
 
@@ -834,7 +906,7 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
   //    then one sub-container per sub-project (sorted alpha), then the project plugins folder last.
   const sortedProjects = [...projectAssetsByName.entries()].sort(([a], [b]) => a.localeCompare(b));
 
-  const projectPluginsFolder = buildProjectPluginsFolder(installedPlugins, projectTeamEnabled, projectLocalEnabled, outdatedPlugins, projectClaudeDir);
+  const projectPluginsFolder = buildProjectPluginsFolder(installedPlugins, projectTeamEnabled, projectLocalEnabled, outdatedPlugins, projectClaudeDir, pluginAssets);
 
   // ensureWdBase: when set, always-visible Skill/Subagent/Command groups are injected into
   // the WD flat root area (the active project's main .claude folder).
@@ -870,6 +942,10 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
       label: 'Working Directory',
       children: wdChildren
     });
+  }
+
+  if (!showTokenUsage) {
+    for (const n of nodes) stripTokenUsage(n);
   }
 
   return nodes;

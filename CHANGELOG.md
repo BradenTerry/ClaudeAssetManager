@@ -5,6 +5,14 @@ follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/). Older releases are listed at
 [GitHub Releases](https://github.com/BradenTerry/ClaudeAssetManager/releases).
 
+## [0.7.1] - 2026-06-12
+
+### Fixed
+
+- An open workspace with no `.claude` directory now shows the always-on **Skills** and **Agents**
+  folders, so there is somewhere to create assets or drop a copied skill/agent. Previously a fresh
+  project showed nothing and a drag-copy onto it had no target.
+
 ## [0.7.0] - 2026-06-12
 
 ### Added

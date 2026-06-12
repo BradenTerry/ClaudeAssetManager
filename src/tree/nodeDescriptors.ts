@@ -347,14 +347,14 @@ const TYPE_SEGMENTS: Partial<Record<AssetType, string>> = {
 };
 
 /**
- * Asset types whose group stays visible even when empty, so the section (and any
- * create affordance) is always available. Commands are intentionally excluded:
- * a command is just a subset of a skill, so an absent commands folder is hidden
- * rather than shown as a placeholder. Memory is likewise never injected empty.
+ * Asset types whose group stays visible even when empty, so the section is always
+ * available as a create and drag-copy target. Memory is never injected empty (it lives
+ * under per-project folders, not a flat group).
  */
 const ALWAYS_SHOWN_WHEN_EMPTY: Set<AssetType> = new Set([
   AssetType.Skill,
   AssetType.Subagent,
+  AssetType.Command,
   AssetType.Workflow
 ]);
 

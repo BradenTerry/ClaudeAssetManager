@@ -747,8 +747,8 @@ describe('buildTreeNodes -- Working Directory container', () => {
     const groupTypes = (wd!.children as Array<{ kind: NodeKind; assetType?: AssetType }>)
       .filter(c => c.kind === NodeKind.Group)
       .map(g => g.assetType);
-    // Skill and Subagent groups are always shown, so a fresh project has somewhere to drop them.
-    for (const t of [AssetType.Skill, AssetType.Subagent]) {
+    // Skill, Subagent, and Command groups are always shown, so a fresh project has somewhere to drop each.
+    for (const t of [AssetType.Skill, AssetType.Subagent, AssetType.Command]) {
       assert.ok(groupTypes.includes(t), `expected an empty ${t} group as a drop/create target`);
     }
   });
@@ -2393,11 +2393,12 @@ describe('buildTreeNodes -- AC7: empty global type groups when globalClaudeDir i
     assert.strictEqual(agentGroup!.createTargetDir, path.join(globalClaudeDir, 'agents'), 'createTargetDir should be <globalClaudeDir>/agents');
   });
 
-  it('No Command group is injected into Global when no command assets exist', () => {
+  it('An empty Command group IS injected into Global with createTargetDir (create/drop target)', () => {
     const nodes = buildTreeNodes([], { installedPlugins: new Map(), outdated: new Set(), globalClaudeDir } as PluginMetadataOptions);
     const global = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global')!;
-    const cmdGroup = global.children.find(c => c.kind === NodeKind.Group && (c as GroupNodeDescriptor).assetType === AssetType.Command);
-    assert.strictEqual(cmdGroup, undefined, 'empty commands folder should be hidden, not shown as a placeholder');
+    const cmdGroup = global.children.find(c => c.kind === NodeKind.Group && (c as GroupNodeDescriptor).assetType === AssetType.Command) as GroupNodeDescriptor | undefined;
+    assert.ok(cmdGroup, 'empty commands folder should be shown as a create/drop target');
+    assert.strictEqual(cmdGroup!.createTargetDir, path.join(globalClaudeDir, 'commands'));
   });
 
   it('No Memory group is injected into Global when no memory assets exist', () => {
@@ -2407,14 +2408,14 @@ describe('buildTreeNodes -- AC7: empty global type groups when globalClaudeDir i
     assert.strictEqual(memoryGroup, undefined, 'No empty Memory group should be injected');
   });
 
-  it('Canonical order in empty Global groups: Skill, Subagent, Workflow (Command hidden when empty)', () => {
+  it('Canonical order in empty Global groups: Skill, Subagent, Command, Workflow', () => {
     const nodes = buildTreeNodes([], { installedPlugins: new Map(), outdated: new Set(), globalClaudeDir } as PluginMetadataOptions);
     const global = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'global')!;
     const groups = global.children.filter(c => c.kind === NodeKind.Group) as GroupNodeDescriptor[];
-    assert.strictEqual(groups.length, 3, 'expected 3 groups (Skill, Subagent, Workflow); empty Command is hidden');
-    assert.strictEqual(groups[0].assetType, AssetType.Skill, 'first group should be Skill');
-    assert.strictEqual(groups[1].assetType, AssetType.Subagent, 'second group should be Subagent');
-    assert.strictEqual(groups[2].assetType, AssetType.Workflow, 'third group should be Workflow');
+    assert.deepStrictEqual(
+      groups.map(g => g.assetType),
+      [AssetType.Skill, AssetType.Subagent, AssetType.Command, AssetType.Workflow]
+    );
   });
 
   it('Global children include Workflow group (empty, read-only, no createTargetDir)', () => {
@@ -2462,11 +2463,12 @@ describe('buildTreeNodes -- AC8: empty WD type groups when projectClaudeDir is s
     assert.strictEqual(agentGroup!.createTargetDir, path.join(projectClaudeDir, 'agents'));
   });
 
-  it('WD flat root hides the Command group when no command assets exist', () => {
+  it('WD flat root contains Command group with createTargetDir = <projectClaudeDir>/commands', () => {
     const nodes = buildTreeNodes([], { installedPlugins: new Map(), outdated: new Set(), projectClaudeDir } as PluginMetadataOptions);
     const wd = (nodes as ContainerNodeDescriptor[]).find(n => n.containerKind === 'working-directory')!;
-    const cmdGroup = wd.children.find(c => c.kind === NodeKind.Group && (c as GroupNodeDescriptor).assetType === AssetType.Command);
-    assert.strictEqual(cmdGroup, undefined, 'empty commands folder should be hidden in WD');
+    const cmdGroup = wd.children.find(c => c.kind === NodeKind.Group && (c as GroupNodeDescriptor).assetType === AssetType.Command) as GroupNodeDescriptor | undefined;
+    assert.ok(cmdGroup, 'empty commands folder should appear in WD as a create/drop target');
+    assert.strictEqual(cmdGroup!.createTargetDir, path.join(projectClaudeDir, 'commands'));
   });
 });
 

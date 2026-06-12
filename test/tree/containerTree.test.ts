@@ -750,6 +750,15 @@ describe('buildTreeNodes -- Working Directory container', () => {
     assert.strictEqual(wd!.label, 'Working Directory');
   });
 
+  it('AC-WD5b: sub-project folders carry their root path (so assets can be drag-copied onto them)', () => {
+    const assets: ClaudeAsset[] = [
+      makeAsset(AssetType.Skill, 's', '/Users/braden/Projects/MyApp/.claude/skills/s/SKILL.md', AssetScope.Project, '/Users/braden/Projects')
+    ];
+    const proj = findProject(buildTreeNodes(assets), 'MyApp');
+    assert.ok(proj, 'expected MyApp sub-project');
+    assert.strictEqual(proj!.dirPath, '/Users/braden/Projects/MyApp', 'sub-project carries its root dir');
+  });
+
   it('AC-WD6: root-level assets (the working dir own .claude) render flat at the WD root, not in a self-named folder', () => {
     const assets: ClaudeAsset[] = [
       // sub-project beneath the workspace root

@@ -7,7 +7,7 @@ import { makeTempDir, writeFile } from '../core/fixtures';
 import { AssetType } from '../../src/core/types';
 import { NodeKind } from '../../src/tree/nodeDescriptors';
 import { AssetDragAndDropController } from '../../src/tree/dragController';
-import { GroupNode, FsDirNode, FsFileNode } from '../../src/tree/nodes';
+import { GroupNode, FsDirNode, FsFileNode, ContainerNode } from '../../src/tree/nodes';
 
 const MIME = 'application/vnd.code.claudeasset';
 
@@ -46,6 +46,21 @@ describe('AssetDragAndDropController', () => {
 
     assert.ok(fs.existsSync(path.join(destDir, 'my-skill', 'SKILL.md')), 'SKILL.md copied');
     assert.ok(fs.existsSync(path.join(destDir, 'my-skill', 'reference.md')), 'whole folder copied (reference too)');
+  });
+
+  it('copies into an empty project/added-directory folder, routing under .claude/<category>', async () => {
+    const srcSkill = path.join(root, 'a', '.claude', 'skills', 'my-skill');
+    writeFile(path.join(srcSkill, 'SKILL.md'), 'body');
+    const projDir = path.join(root, 'empty-proj');
+    fs.mkdirSync(projDir, { recursive: true });
+    const container = new ContainerNode({ kind: NodeKind.Container, containerKind: 'project', label: 'empty-proj', children: [], dirPath: projDir });
+
+    await dragDrop(controller, [new FsDirNode(srcSkill, 'my-skill')], container);
+
+    assert.ok(
+      fs.existsSync(path.join(projDir, '.claude', 'skills', 'my-skill', 'SKILL.md')),
+      'skill copied under <dir>/.claude/skills/ for a container drop'
+    );
   });
 
   it('rejects an agent dropped on a skills group (type-constrained)', async () => {

@@ -251,6 +251,18 @@ const TYPE_LABELS: Partial<Record<AssetType, string>> = {
  * return the absolute path of that segment directory (e.g. ".../skills"), or
  * undefined when the segment is not present in the path. Uses the deepest match.
  */
+/**
+ * The project/worktree root directory for an asset: the path up to (but excluding) the
+ * first `/.claude/` segment, else the file's own directory. Used as a drop destination
+ * so dragged assets route under `<root>/.claude/<category>/`.
+ */
+function projectRootDir(asset: ClaudeAsset): string | undefined {
+  const norm = asset.filePath.replace(/\\/g, '/');
+  const idx = norm.indexOf('/.claude/');
+  if (idx !== -1) return asset.filePath.slice(0, idx);
+  return path.dirname(asset.filePath);
+}
+
 function deriveSegmentRoot(filePath: string, segment: string): string | undefined {
   const norm = filePath.replace(/\\/g, '/');
   const marker = `/${segment}/`;
@@ -936,7 +948,9 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
         kind: NodeKind.Container,
         containerKind: 'project',
         label: projectName,
-        children: buildProjectChildren(projAssets)
+        children: buildProjectChildren(projAssets),
+        // Carry the project root so assets can be drag-copied onto the folder.
+        dirPath: projectRootDir(projAssets[0])
       });
     }
 

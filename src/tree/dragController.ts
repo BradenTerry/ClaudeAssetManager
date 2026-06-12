@@ -29,10 +29,15 @@ function resolveTarget(target: TreeNode | undefined): DropTarget | undefined {
     return { kind: 'group', dir, segment };
   }
   if (target instanceof FsDirNode) {
-    // Dropping onto a type dir itself (e.g. a "skills" folder rendered from disk).
+    // A type dir itself (e.g. a "skills" folder rendered from disk) is a group target.
     const base = path.basename(target.dirPath);
     if ((DRAGGABLE_SEGMENTS as readonly string[]).includes(base)) {
       return { kind: 'group', dir: target.dirPath, segment: base as DragCategory };
+    }
+    // A directory that is NOT inside a type tree is a project-like container; route under
+    // its .claude/<category>/. A folder inside a type tree (e.g. a specific skill) is not a target.
+    if (categoryOf(target.dirPath) === undefined) {
+      return { kind: 'container', dir: target.dirPath };
     }
     return undefined;
   }

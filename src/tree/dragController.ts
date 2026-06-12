@@ -93,12 +93,17 @@ export class AssetDragAndDropController implements vscode.TreeDragAndDropControl
   readonly dragMimeTypes = [MIME];
   readonly dropMimeTypes = [MIME, ...TREE_MIMES];
 
+  // The items from the most recent drag. VS Code does not reliably carry a custom mime's value
+  // across separate tree views, but this one controller instance handles drag and drop for all
+  // three views, so we stash the dragged items here and read them back on drop.
+  private dragged: DragItem[] = [];
+
   constructor(private readonly refresh: () => Promise<void>) {}
 
   handleDrag(source: readonly TreeNode[], dataTransfer: vscode.DataTransfer): void {
-    const items = nodesToItems(source);
-    if (items.length > 0) {
-      dataTransfer.set(MIME, new vscode.DataTransferItem(JSON.stringify(items)));
+    this.dragged = nodesToItems(source);
+    if (this.dragged.length > 0) {
+      dataTransfer.set(MIME, new vscode.DataTransferItem(JSON.stringify(this.dragged)));
     }
   }
 
@@ -143,13 +148,13 @@ export class AssetDragAndDropController implements vscode.TreeDragAndDropControl
   }
 
   async handleDrop(target: TreeNode | undefined, dataTransfer: vscode.DataTransfer): Promise<void> {
-    const { items, mimes } = await this.readItems(dataTransfer);
+    // Prefer the data transfer (works within a view / future-proof), but fall back to the items
+    // stashed by handleDrag, since custom mime values are not carried between separate tree views.
+    const { items: transferItems, mimes } = await this.readItems(dataTransfer);
+    const items = transferItems.length > 0 ? transferItems : this.dragged;
     if (items.length === 0) {
       if (mimes.length > 0) {
-        let raw = '<none>';
-        const custom = dataTransfer.get(MIME);
-        if (custom) { try { raw = await custom.asString(); } catch (e) { raw = `<asString threw: ${e}>`; } }
-        vscode.window.showWarningMessage(`Drag debug. mimes=[${mimes.join(', ')}] custom=${JSON.stringify(raw).slice(0, 300)}`);
+        vscode.window.showWarningMessage('Could not read the dragged item. Drag a skill, agent, or command from one of the sections.');
       }
       return;
     }

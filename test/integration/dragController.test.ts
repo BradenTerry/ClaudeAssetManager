@@ -63,6 +63,23 @@ describe('AssetDragAndDropController', () => {
     assert.ok(fs.existsSync(path.join(destDir, 'my-skill', 'SKILL.md')), 'cross-view drop copied via the tree mime');
   });
 
+  it('falls back to the in-memory drag stash when the transfer carries no usable payload (cross-view)', async () => {
+    const srcSkill = path.join(root, 'a', '.claude', 'skills', 'my-skill');
+    writeFile(path.join(srcSkill, 'SKILL.md'), 'body');
+    const destDir = path.join(root, 'b', '.claude', 'skills');
+    fs.mkdirSync(destDir, { recursive: true });
+
+    // Drag stashes the items in the controller.
+    controller.handleDrag([new FsDirNode(srcSkill, 'my-skill')] as never, new vscodeMock.DataTransfer() as never);
+    // Drop receives a transfer whose only payload is an unusable tree mime (no node value) --
+    // mimicking VS Code dropping a custom mime's value between separate views.
+    const dt = new vscodeMock.DataTransfer();
+    dt.set('application/vnd.code.tree.claudeassets.global', new vscodeMock.DataTransferItem(undefined));
+    await controller.handleDrop(skillsGroup(destDir) as never, dt as never);
+
+    assert.ok(fs.existsSync(path.join(destDir, 'my-skill', 'SKILL.md')), 'copied using the drag stash');
+  });
+
   it('copies into an empty project/added-directory folder, routing under .claude/<category>', async () => {
     const srcSkill = path.join(root, 'a', '.claude', 'skills', 'my-skill');
     writeFile(path.join(srcSkill, 'SKILL.md'), 'body');

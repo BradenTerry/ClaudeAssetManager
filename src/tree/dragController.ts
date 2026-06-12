@@ -146,7 +146,10 @@ export class AssetDragAndDropController implements vscode.TreeDragAndDropControl
     const { items, mimes } = await this.readItems(dataTransfer);
     if (items.length === 0) {
       if (mimes.length > 0) {
-        vscode.window.showWarningMessage(`Could not read the dragged item. Drag data types: ${mimes.join(', ')}`);
+        let raw = '<none>';
+        const custom = dataTransfer.get(MIME);
+        if (custom) { try { raw = await custom.asString(); } catch (e) { raw = `<asString threw: ${e}>`; } }
+        vscode.window.showWarningMessage(`Drag debug. mimes=[${mimes.join(', ')}] custom=${JSON.stringify(raw).slice(0, 300)}`);
       }
       return;
     }

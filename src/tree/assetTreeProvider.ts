@@ -101,7 +101,7 @@ export class AssetTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   // which also suppresses the on-demand fallback for non-asset files.
   private tokenMap: Map<string, TokenUsage> | undefined = new Map();
 
-  constructor(private readonly section: 'global' | 'working-directory') {}
+  constructor(private readonly section: 'global' | 'working-directory' | 'added-directories') {}
 
   update(assets: ClaudeAsset[], pluginMeta?: PluginMetadataOptions): void {
     this.assets = assets;
@@ -142,20 +142,27 @@ export class AssetTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   }
 
   /**
-   * Total token usage of the assets shown in this section, for the view banner.
-   * Global → global-scoped assets; Working Directory → everything that is neither
-   * global nor plugin (project/registered/root). Plugin assets are excluded (their
-   * loaded cost depends on enablement, surfaced separately). Worktree assets are
+   * Total token usage of the assets shown in this section, for the summary row.
+   * Global → global-scoped assets; Working Directory → project-scoped (the open
+   * workspace and its sub-projects); Added Directories → registered-scoped (the
+   * user-added dirs). Plugin assets are excluded (their loaded cost depends on
+   * enablement, surfaced separately). For Working Directory, worktree copies are
    * excluded too: other worktrees are separate checkouts (and usually duplicate the
-   * main CLAUDE.md/agents), so they are not part of the active context's loaded cost
-   * -- counting them double-billed the banner relative to the visible main tree.
+   * main CLAUDE.md/agents), so counting them would double-bill the total.
    */
   getContextSummary(): TokenUsage {
     const inSection = (a: ClaudeAsset): boolean => {
-      if (this.section === 'global') return a.scope === AssetScope.Global;
-      if (a.scope === AssetScope.Global || a.scope === AssetScope.Plugin) return false;
-      // Worktree copies live under a "worktrees" folder in the tree, not the active context.
-      return deriveProjectInfo(a).worktree === null;
+      switch (this.section) {
+        case 'global':
+          return a.scope === AssetScope.Global;
+        case 'added-directories':
+          return a.scope === AssetScope.Registered;
+        case 'working-directory':
+        default:
+          if (a.scope !== AssetScope.Project) return false;
+          // Worktree copies live under a "worktrees" folder in the tree, not the active context.
+          return deriveProjectInfo(a).worktree === null;
+      }
     };
     return sumTokenUsage(this.assets.filter(inSection).map(a => a.tokenUsage));
   }

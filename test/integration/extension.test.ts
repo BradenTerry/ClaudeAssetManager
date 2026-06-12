@@ -370,6 +370,25 @@ describe('extension integration', () => {
       // Only the main copy counts -- not main + worktree.
       assert.deepStrictEqual(provider.getContextSummary(), main.tokenUsage);
     });
+
+    it('each section summary counts only its own scope (project vs registered)', () => {
+      const mk = (filePath: string, scope: AssetScope): ClaudeAsset => ({
+        type: AssetType.ClaudeMd, name: 'CLAUDE.md', filePath, scope, rootPath: '/r', description: undefined,
+        tokenUsage: computeTokenUsage(AssetType.ClaudeMd, '# rules\n'.repeat(40))
+      });
+      const projectAsset = mk('/ws/proj/CLAUDE.md', AssetScope.Project);
+      const registeredAsset = mk('/added/lib/CLAUDE.md', AssetScope.Registered);
+      const assets = [projectAsset, registeredAsset];
+
+      const wd = new AssetTreeProvider('working-directory');
+      const added = new AssetTreeProvider('added-directories');
+      wd.update(assets);
+      added.update(assets);
+
+      // Working Directory counts the project asset only; Added Directories the registered one only.
+      assert.deepStrictEqual(wd.getContextSummary(), projectAsset.tokenUsage);
+      assert.deepStrictEqual(added.getContextSummary(), registeredAsset.tokenUsage);
+    });
   });
 
   describe('worktree visibility toggle (Working Directory only)', () => {
@@ -409,6 +428,25 @@ describe('extension integration', () => {
       await exec('claudeAssets.hideWorktrees');
       assert.strictEqual(harness.config['claudeAssets.showWorktrees'], false, 'setting persisted off');
       assert.ok(lastWtContext()?.args[1] === false, 'context key set false');
+    });
+  });
+
+  describe('remove directory', () => {
+    it('right-click on a registered-dir node removes that dir directly (no quick pick)', async () => {
+      harness.config['claudeAssets.directories'] = ['/Users/braden/a', '/Users/braden/b'];
+      // No quick-pick response queued: if the handler fell back to a prompt, nothing would be removed.
+      await exec('claudeAssets.removeDirectory', { dirPath: '/Users/braden/a' });
+      assert.deepStrictEqual(
+        harness.config['claudeAssets.directories'], ['/Users/braden/b'],
+        'only the clicked directory should be removed, without prompting'
+      );
+    });
+
+    it('falls back to a quick pick when invoked without a node (command palette)', async () => {
+      harness.config['claudeAssets.directories'] = ['/Users/braden/a', '/Users/braden/b'];
+      harness.quickPickResponses.push('/Users/braden/b');
+      await exec('claudeAssets.removeDirectory');
+      assert.deepStrictEqual(harness.config['claudeAssets.directories'], ['/Users/braden/a']);
     });
   });
 

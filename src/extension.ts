@@ -61,13 +61,22 @@ export function activate(context: vscode.ExtensionContext): void {
   const homeClaudeDir = path.join(os.homedir(), '.claude');
   const globalProvider = new AssetTreeProvider('global');
   const workingDirProvider = new AssetTreeProvider('working-directory');
+  const addedDirsProvider = new AssetTreeProvider('added-directories');
+
+  type Section = 'global' | 'working-directory' | 'added-directories';
 
   // Drives which token-toggle button (show/hide) each view's title bar renders.
   // Each section has its own independent toggle, key, and setting.
-  const tokenCtxKey = (section: 'global' | 'working-directory'): string =>
-    section === 'global' ? 'claudeAssets.tokenUsageEnabledGlobal' : 'claudeAssets.tokenUsageEnabledWorkingDirectory';
+  const tokenCtxKey = (section: Section): string => {
+    switch (section) {
+      case 'global': return 'claudeAssets.tokenUsageEnabledGlobal';
+      case 'working-directory': return 'claudeAssets.tokenUsageEnabledWorkingDirectory';
+      case 'added-directories': return 'claudeAssets.tokenUsageEnabledAddedDirectories';
+    }
+  };
   vscode.commands.executeCommand('setContext', tokenCtxKey('global'), getShowTokenUsage('global'));
   vscode.commands.executeCommand('setContext', tokenCtxKey('working-directory'), getShowTokenUsage('working-directory'));
+  vscode.commands.executeCommand('setContext', tokenCtxKey('added-directories'), getShowTokenUsage('added-directories'));
 
   // Drives which worktree-toggle button (show/hide) the Working Directory title bar renders.
   const WORKTREES_CTX_KEY = 'claudeAssets.worktreesEnabled';
@@ -385,11 +394,12 @@ export function activate(context: vscode.ExtensionContext): void {
       ? readEnabledPlugins(path.join(currentProjectDir, '.claude', 'settings.local.json'))
       : new Map();
 
-    const meta = { installedPlugins, outdated, enabled: enabledMap, marketplaces, projectTeamEnabled: currentTeamEnabled, projectLocalEnabled: currentLocalEnabled, projectClaudeDir, globalClaudeDir: homeClaudeDir };
+    const meta = { installedPlugins, outdated, enabled: enabledMap, marketplaces, projectTeamEnabled: currentTeamEnabled, projectLocalEnabled: currentLocalEnabled, projectClaudeDir, globalClaudeDir: homeClaudeDir, registeredDirs };
     // Each provider leads its tree with a token-summary row (info icon + (a)/(d)
     // legend) when its section's token toggle is on -- see AssetTreeProvider.rebuild.
     globalProvider.update(assets, meta);
     workingDirProvider.update(assets, meta);
+    addedDirsProvider.update(assets, meta);
 
     // Re-watch
     if (disposeWatcher) {
@@ -407,6 +417,10 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   const workingDirView = vscode.window.createTreeView('claudeAssets.workingDirectory', {
     treeDataProvider: workingDirProvider,
+    showCollapseAll: true
+  });
+  const addedDirsView = vscode.window.createTreeView('claudeAssets.addedDirectories', {
+    treeDataProvider: addedDirsProvider,
     showCollapseAll: true
   });
 
@@ -541,7 +555,7 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   // Toggle one section's token display: persist, flip its context key (button state), re-scan.
-  async function setSectionTokens(section: 'global' | 'working-directory', value: boolean): Promise<void> {
+  async function setSectionTokens(section: Section, value: boolean): Promise<void> {
     await setShowTokenUsage(section, value);
     await vscode.commands.executeCommand('setContext', tokenCtxKey(section), value);
     await runScan();
@@ -593,6 +607,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     globalView,
     workingDirView,
+    addedDirsView,
     vscode.workspace.onDidChangeWorkspaceFolders(() => updateWorkingDirTitle()),
 
     vscode.commands.registerCommand('claudeAssets.refresh', () => {
@@ -605,6 +620,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('claudeAssets.disableTokenUsageGlobal', () => setSectionTokens('global', false)),
     vscode.commands.registerCommand('claudeAssets.enableTokenUsageWorkingDirectory', () => setSectionTokens('working-directory', true)),
     vscode.commands.registerCommand('claudeAssets.disableTokenUsageWorkingDirectory', () => setSectionTokens('working-directory', false)),
+    vscode.commands.registerCommand('claudeAssets.enableTokenUsageAddedDirectories', () => setSectionTokens('added-directories', true)),
+    vscode.commands.registerCommand('claudeAssets.disableTokenUsageAddedDirectories', () => setSectionTokens('added-directories', false)),
     vscode.commands.registerCommand('claudeAssets.showWorktrees', () => setWorktreesVisible(true)),
     vscode.commands.registerCommand('claudeAssets.hideWorktrees', () => setWorktreesVisible(false)),
     vscode.commands.registerCommand('claudeAssets.tokenLegend', () => {
@@ -780,18 +797,22 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
 
-    vscode.commands.registerCommand('claudeAssets.removeDirectory', async (node?: AssetNode) => {
+    vscode.commands.registerCommand('claudeAssets.removeDirectory', async (arg?: unknown) => {
       const dirs = getDirectories();
       if (dirs.length === 0) {
         vscode.window.showInformationMessage('No registered directories to remove.');
         return;
       }
-      const picked = await vscode.window.showQuickPick(dirs, {
-        placeHolder: 'Select a directory to remove'
-      });
+      // Right-click on a registered-dir folder passes the node -> remove that one directly.
+      // Invoked from the palette (no node) -> ask which one.
+      const fromNode = resolveFsPath(arg);
+      const picked = fromNode && dirs.includes(fromNode)
+        ? fromNode
+        : await vscode.window.showQuickPick(dirs, { placeHolder: 'Select a directory to remove' });
       if (picked) {
         await removeDirectory(picked);
         runScan().catch(() => { /* ignore */ });
+        vscode.window.showInformationMessage(`Removed "${path.basename(picked)}" from scanned directories.`);
       }
     }),
 

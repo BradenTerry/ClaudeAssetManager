@@ -22,8 +22,8 @@ export enum NodeKind {
 
 export interface ContainerNodeDescriptor {
   kind: NodeKind.Container;
-  /** 'global' | 'plugins' | 'marketplace' | 'project' | 'working-directory' | 'projects' */
-  containerKind: 'global' | 'plugins' | 'marketplace' | 'project' | 'working-directory' | 'projects';
+  /** 'global' | 'plugins' | 'marketplace' | 'project' | 'working-directory' | 'added-directories' | 'projects' */
+  containerKind: 'global' | 'plugins' | 'marketplace' | 'project' | 'working-directory' | 'added-directories' | 'projects';
   label: string;
   /**
    * For global: flat leaves (ClaudeMd/Config), then type groups (Skills/Subagents/Commands/Memory),
@@ -100,6 +100,9 @@ export interface PluginMetadataOptions {
   projectClaudeDir?: string;
   /** Absolute path to the global ~/.claude folder; when set, always-visible Skill/Subagent/Command groups are injected. */
   globalClaudeDir?: string;
+  /** User-registered directory paths (claudeAssets.directories). When set, the Added Directories
+   *  section shows a folder for every one -- even those with no Claude assets yet. */
+  registeredDirs?: string[];
 }
 
 export interface GroupNodeDescriptor {
@@ -696,18 +699,24 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
     (pluginMeta && (pluginMeta as Partial<PluginMetadataOptions>).projectClaudeDir) ? pluginMeta.projectClaudeDir : undefined;
   const globalClaudeDir: string | undefined =
     (pluginMeta && (pluginMeta as Partial<PluginMetadataOptions>).globalClaudeDir) ? pluginMeta.globalClaudeDir : undefined;
+  const registeredDirs: string[] =
+    (pluginMeta && (pluginMeta as Partial<PluginMetadataOptions>).registeredDirs) ? pluginMeta.registeredDirs! : [];
 
   // Partition by scope
   const globalAssets: ClaudeAsset[] = [];
   const pluginAssets: ClaudeAsset[] = [];
   const workingRootAssets: ClaudeAsset[] = [];
   const projectAssetsByName = new Map<string, ClaudeAsset[]>();
+  // Registered (user-added) directories live in their own section below Working Directory.
+  const registeredAssets: ClaudeAsset[] = [];
 
   for (const asset of assets) {
     if (asset.scope === AssetScope.Global) {
       globalAssets.push(asset);
     } else if (asset.scope === AssetScope.Plugin) {
       pluginAssets.push(asset);
+    } else if (asset.scope === AssetScope.Registered) {
+      registeredAssets.push(asset);
     } else if (isRootLevelAsset(asset)) {
       // Belongs to the working-directory root itself -- render flat at the WD root,
       // not inside a folder named after the root.
@@ -941,6 +950,58 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
       containerKind: 'working-directory',
       label: 'Working Directory',
       children: wdChildren
+    });
+  }
+
+  // 3. Added Directories container: one folder per user-registered directory. Its own view
+  //    sits below Working Directory in the sidebar.
+  //    - With the registered-dir list (runtime): show a folder for EVERY registered dir, even
+  //      those with no Claude assets yet, so an added directory is always visible/revealable.
+  //    - Without it (unit tests): derive folders from the registered assets, grouped by project.
+  let addedChildren: ContainerNodeDescriptor['children'] = [];
+  if (registeredDirs.length > 0) {
+    const byRoot = new Map<string, ClaudeAsset[]>();
+    for (const a of registeredAssets) {
+      const group = byRoot.get(a.rootPath);
+      if (group) group.push(a); else byRoot.set(a.rootPath, [a]);
+    }
+    addedChildren = [...registeredDirs]
+      .sort((a, b) => path.basename(a).localeCompare(path.basename(b)))
+      .map(dir => {
+        const children = buildProjectChildren(byRoot.get(dir) ?? []);
+        return {
+          kind: NodeKind.Container as NodeKind.Container,
+          containerKind: 'project' as const,
+          label: path.basename(dir) || dir,
+          children,
+          // Make it clear an added dir is registered but simply has no Claude assets yet.
+          description: children.length === 0 ? '(no Claude assets)' : undefined,
+          contextValue: 'registeredRoot',
+          dirPath: dir
+        };
+      });
+  } else {
+    const byName = new Map<string, ClaudeAsset[]>();
+    for (const a of registeredAssets) {
+      const name = deriveProjectInfo(a).project;
+      const group = byName.get(name);
+      if (group) group.push(a); else byName.set(name, [a]);
+    }
+    addedChildren = [...byName.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, regAssets]) => ({
+        kind: NodeKind.Container as NodeKind.Container,
+        containerKind: 'project' as const,
+        label: name,
+        children: buildProjectChildren(regAssets)
+      }));
+  }
+  if (addedChildren.length > 0) {
+    nodes.push({
+      kind: NodeKind.Container,
+      containerKind: 'added-directories',
+      label: 'Added Directories',
+      children: addedChildren
     });
   }
 

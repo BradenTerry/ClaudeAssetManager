@@ -65,8 +65,10 @@ const md = `<svg width="16" height="16" viewBox="0 0 16 16" style="vertical-alig
 const json = ci('json', '#cbcb41');
 
 // Title-bar icon sets.
+const addIcon = ci('add');
 const globalIcons = [ci('info'), tkIcon, ci('refresh')];
 const wdIcons = [ci('info'), tkIcon, treeIcon, ci('refresh')];
+const addedIcons = [ci('info'), tkIcon, addIcon, ci('refresh')];
 
 function panel(innerHtml, width = 300) {
   return `<div class="panel" style="width:${width}px;background:${C.bg};border-radius:8px;overflow:hidden;
@@ -87,8 +89,8 @@ function page(bodyHtml) {
 
 const globalRowsClean =
   header('GLOBAL', globalIcons) +
-  row({ twisty: 'right', icon: md, label: 'CLAUDE.md' }) +
-  row({ twisty: 'right', icon: json, label: 'settings.json' }) +
+  row({ icon: md, label: 'CLAUDE.md' }) +
+  row({ icon: json, label: 'settings.json' }) +
   row({ twisty: 'right', icon: folder, label: 'skills' }) +
   row({ twisty: 'right', icon: folder, label: 'agents' }) +
   row({ twisty: 'right', icon: folder, label: 'commands' }) +
@@ -97,8 +99,8 @@ const globalRowsClean =
   row({ twisty: 'right', icon: folder, label: 'plugins', desc: '3/4 enabled' });
 
 const wdRowsClean =
-  row({ twisty: 'right', icon: md, label: 'CLAUDE.md' }) +
-  row({ twisty: 'right', icon: json, label: 'settings.json' }) +
+  row({ icon: md, label: 'CLAUDE.md' }) +
+  row({ icon: json, label: 'settings.json' }) +
   row({ twisty: 'down', icon: folder, label: 'skills' }) +
   row({ level: 1, twisty: 'right', icon: folder, label: 'test' }) +
   row({ twisty: 'down', icon: folder, label: 'agents' }) +
@@ -106,16 +108,21 @@ const wdRowsClean =
   row({ twisty: 'right', icon: folder, label: 'commands' }) +
   row({ twisty: 'right', icon: folder, label: 'workflows' });
 
-// 1. Overview (default state, token estimates off): both sections.
+// 1. Overview (default state, token estimates off): all three sections.
+const addedRowsClean =
+  row({ twisty: 'right', icon: folder, label: 'shared-prompts' }) +
+  row({ twisty: 'right', icon: folder, label: 'team-standards' });
 const overview = panel(
-  globalRowsClean + `<div style="height:6px"></div>` + header('WORKOUTS (WD)', wdIcons) + wdRowsClean
+  globalRowsClean + `<div style="height:6px"></div>` +
+  header('DEMO-APP (WD)', wdIcons) + wdRowsClean + `<div style="height:6px"></div>` +
+  header('ADDED DIRECTORIES', addedIcons) + addedRowsClean
 );
 
 // 2. Tokens close-up: token estimates turned ON, with a hover tooltip over the summary row.
 const wdRowsTokens =
   row({ label: '~512 tk (a) · ~1.5k tk (d)' }) +
-  row({ twisty: 'right', icon: md, label: 'CLAUDE.md', desc: '~394 tk (a)' }) +
-  row({ twisty: 'right', icon: json, label: 'settings.json' }) +
+  row({ icon: md, label: 'CLAUDE.md', desc: '~394 tk (a)' }) +
+  row({ icon: json, label: 'settings.json' }) +
   row({ twisty: 'down', icon: folder, label: 'skills', desc: '~13 tk (a) · ~4 tk (d)' }) +
   row({ level: 1, twisty: 'right', icon: folder, label: 'test' }) +
   row({ twisty: 'down', icon: folder, label: 'agents', desc: '~105 tk (a) · ~956 tk (d)' }) +
@@ -129,11 +136,11 @@ const tooltip = `<div style="position:absolute;left:34px;top:58px;width:300px;ba
   tk&nbsp;&nbsp;tokens.<br>
   (a) always loaded: counted into Claude's context every turn.<br>
   (d) on demand: loaded only when that asset is used.</div>`;
-const tokens = `<div style="position:relative;display:inline-block">${panel(header('WORKOUTS (WD)', wdIcons) + wdRowsTokens, 320)}${tooltip}</div>`;
+const tokens = `<div style="position:relative;display:inline-block">${panel(header('DEMO-APP (WD)', wdIcons) + wdRowsTokens, 320)}${tooltip}</div>`;
 
 // 3. Worktrees: WD with the worktrees folder expanded (token estimates off).
-const wdWorktrees = header('WORKOUTS (WD)', wdIcons) +
-  row({ twisty: 'right', icon: md, label: 'CLAUDE.md' }) +
+const wdWorktrees = header('DEMO-APP (WD)', wdIcons) +
+  row({ icon: md, label: 'CLAUDE.md' }) +
   row({ twisty: 'down', icon: folder, label: 'agents' }) +
   row({ level: 1, icon: md, label: 'ops-engineer.md' }) +
   row({ twisty: 'down', icon: folder, label: 'worktrees' }) +

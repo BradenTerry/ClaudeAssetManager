@@ -165,8 +165,13 @@ function deriveScope(filePath: string, root: ScanRoot, defaultScope: AssetScope)
     return AssetScope.Global;
   }
 
-  // For registered and workspace roots: classify by .claude/ segment presence.
-  // A path containing /.claude/ is a project-local asset -> Project scope.
+  // Registered (user-added) roots keep their Registered scope for everything beneath them,
+  // including assets inside .claude/, so they group under the Added Directories section.
+  if (defaultScope === AssetScope.Registered) {
+    return AssetScope.Registered;
+  }
+
+  // For workspace roots: a path containing /.claude/ is a project-local asset -> Project scope.
   // A loose asset without .claude/ in the path retains the root's default scope.
   if (normalizedPath.includes('/.claude/') || normalizedPath.endsWith('/.claude')) {
     return AssetScope.Project;

@@ -57,9 +57,21 @@
           "name": "Working Directory",
           "icon": "media/claude-assets.svg",
           "contextualTitle": "Claude Asset Manager"
+        },
+        {
+          "id": "claudeAssets.addedDirectories",
+          "name": "Added Directories",
+          "icon": "media/claude-assets.svg",
+          "contextualTitle": "Claude Asset Manager"
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "claudeAssets.addedDirectories",
+        "contents": "Add directories outside your workspace to scan for Claude assets. They persist across every folder you open.\n[Add Directory](command:claudeAssets.addDirectory)"
+      }
+    ],
     "commands": [
       {
         "command": "claudeAssets.refresh",
@@ -231,6 +243,24 @@
         "category": "Claude Asset Manager"
       },
       {
+        "command": "claudeAssets.enableTokenUsageAddedDirectories",
+        "title": "Show Token Counts",
+        "icon": {
+          "light": "media/tokens-off-light.svg",
+          "dark": "media/tokens-off-dark.svg"
+        },
+        "category": "Claude Asset Manager"
+      },
+      {
+        "command": "claudeAssets.disableTokenUsageAddedDirectories",
+        "title": "Hide Token Counts",
+        "icon": {
+          "light": "media/tokens-on-light.svg",
+          "dark": "media/tokens-on-dark.svg"
+        },
+        "category": "Claude Asset Manager"
+      },
+      {
         "command": "claudeAssets.tokenLegend",
         "title": "Token Estimate Legend (~, tk, a, d)",
         "icon": "$(info)",
@@ -259,13 +289,28 @@
       "view/title": [
         {
           "command": "claudeAssets.refresh",
-          "when": "view == claudeAssets.global || view == claudeAssets.workingDirectory",
+          "when": "view == claudeAssets.global || view == claudeAssets.workingDirectory || view == claudeAssets.addedDirectories",
           "group": "navigation@3"
         },
         {
           "command": "claudeAssets.tokenLegend",
-          "when": "view == claudeAssets.global || view == claudeAssets.workingDirectory",
+          "when": "view == claudeAssets.global || view == claudeAssets.workingDirectory || view == claudeAssets.addedDirectories",
           "group": "navigation@0"
+        },
+        {
+          "command": "claudeAssets.addDirectory",
+          "when": "view == claudeAssets.addedDirectories",
+          "group": "navigation@4"
+        },
+        {
+          "command": "claudeAssets.enableTokenUsageAddedDirectories",
+          "when": "view == claudeAssets.addedDirectories && !claudeAssets.tokenUsageEnabledAddedDirectories",
+          "group": "navigation@1"
+        },
+        {
+          "command": "claudeAssets.disableTokenUsageAddedDirectories",
+          "when": "view == claudeAssets.addedDirectories && claudeAssets.tokenUsageEnabledAddedDirectories",
+          "group": "navigation@1"
         },
         {
           "command": "claudeAssets.enableTokenUsageGlobal",
@@ -301,22 +346,22 @@
       "view/item/context": [
         {
           "command": "claudeAssets.openFile",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config|workflow)-/ || viewItem =~ /^fsFile/)",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory || view == claudeAssets.addedDirectories) && (viewItem =~ /^asset-(md|config|workflow)-/ || viewItem =~ /^fsFile/)",
           "group": "open"
         },
         {
           "command": "claudeAssets.openPreview",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-md-/ || viewItem =~ /^fsFileMd/)",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory || view == claudeAssets.addedDirectories) && (viewItem =~ /^asset-md-/ || viewItem =~ /^fsFileMd/)",
           "group": "open"
         },
         {
           "command": "claudeAssets.revealInOS",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config|workflow)-/ || viewItem =~ /^fs(Dir|File)/ || viewItem == assetPluginsRoot || viewItem == assetPluginsRootOutdated || viewItem == assetProjectsRoot || viewItem == assetProjectFolder || viewItem == assetMarketplace || viewItem == assetMarketplaceOutdated || viewItem == assetProjectPluginsRoot || viewItem == assetProjectMarketplace)",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory || view == claudeAssets.addedDirectories) && (viewItem =~ /^asset-(md|config|workflow)-/ || viewItem =~ /^fs(Dir|File)/ || viewItem == assetPluginsRoot || viewItem == assetPluginsRootOutdated || viewItem == assetProjectsRoot || viewItem == assetProjectFolder || viewItem == assetMarketplace || viewItem == assetMarketplaceOutdated || viewItem == assetProjectPluginsRoot || viewItem == assetProjectMarketplace)",
           "group": "reveal"
         },
         {
           "command": "claudeAssets.removeDirectory",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem == registeredRoot",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory || view == claudeAssets.addedDirectories) && viewItem == registeredRoot",
           "group": "manage"
         },
         {
@@ -411,47 +456,47 @@
         },
         {
           "command": "claudeAssets.deleteFile",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem =~ /^asset-(md|config|workflow)-(global|project|registered)/ || viewItem == fsFile || viewItem == fsFileMd || viewItem == fsDir || viewItem == assetProjectFolder)",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory || view == claudeAssets.addedDirectories) && (viewItem =~ /^asset-(md|config|workflow)-(global|project|registered)/ || viewItem == fsFile || viewItem == fsFileMd || viewItem == fsDir || viewItem == assetProjectFolder)",
           "group": "zzz_delete"
         },
         {
           "command": "claudeAssets.createSkill",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem == assetGroupSkills",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory || view == claudeAssets.addedDirectories) && viewItem == assetGroupSkills",
           "group": "inline"
         },
         {
           "command": "claudeAssets.createSkill",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem == assetGroupSkills",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory || view == claudeAssets.addedDirectories) && viewItem == assetGroupSkills",
           "group": "create"
         },
         {
           "command": "claudeAssets.createAgent",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem == assetGroupAgents",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory || view == claudeAssets.addedDirectories) && viewItem == assetGroupAgents",
           "group": "inline"
         },
         {
           "command": "claudeAssets.createAgent",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem == assetGroupAgents",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory || view == claudeAssets.addedDirectories) && viewItem == assetGroupAgents",
           "group": "create"
         },
         {
           "command": "claudeAssets.createCommand",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem == assetGroupCommands",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory || view == claudeAssets.addedDirectories) && viewItem == assetGroupCommands",
           "group": "inline"
         },
         {
           "command": "claudeAssets.createCommand",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && viewItem == assetGroupCommands",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory || view == claudeAssets.addedDirectories) && viewItem == assetGroupCommands",
           "group": "create"
         },
         {
           "command": "claudeAssets.showSectionInfo",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem == assetGroupSkills || viewItem == assetGroupAgents || viewItem == assetGroupCommands || viewItem == assetGroupWorkflows || viewItem == assetGroupMemory || viewItem =~ /^assetPluginsRoot/ || viewItem == assetProjectPluginsRoot)",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory || view == claudeAssets.addedDirectories) && (viewItem == assetGroupSkills || viewItem == assetGroupAgents || viewItem == assetGroupCommands || viewItem == assetGroupWorkflows || viewItem == assetGroupMemory || viewItem =~ /^assetPluginsRoot/ || viewItem == assetProjectPluginsRoot)",
           "group": "inline@9"
         },
         {
           "command": "claudeAssets.showSectionInfo",
-          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory) && (viewItem == assetGroupSkills || viewItem == assetGroupAgents || viewItem == assetGroupCommands || viewItem == assetGroupWorkflows || viewItem == assetGroupMemory || viewItem =~ /^assetPluginsRoot/ || viewItem == assetProjectPluginsRoot)",
+          "when": "(view == claudeAssets.global || view == claudeAssets.workingDirectory || view == claudeAssets.addedDirectories) && (viewItem == assetGroupSkills || viewItem == assetGroupAgents || viewItem == assetGroupCommands || viewItem == assetGroupWorkflows || viewItem == assetGroupMemory || viewItem =~ /^assetPluginsRoot/ || viewItem == assetProjectPluginsRoot)",
           "group": "info"
         }
       ]
@@ -506,6 +551,11 @@
           "type": "boolean",
           "default": false,
           "description": "Show estimated token counts in the Working Directory section (assets, group totals, and banner). Toggle from the Working Directory view title bar (the eye icon)."
+        },
+        "claudeAssets.showTokenUsageAddedDirectories": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show estimated token counts in the Added Directories section (assets, group totals, and summary). Toggle from the Added Directories view title bar (the tk icon)."
         },
         "claudeAssets.showWorktrees": {
           "type": "boolean",

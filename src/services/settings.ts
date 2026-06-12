@@ -21,10 +21,14 @@ export function getMaxDepth(): number {
   return vscode.workspace.getConfiguration(CONFIG_SECTION).get<number>('maxDepth', 6);
 }
 
-export type AssetSection = 'global' | 'working-directory';
+export type AssetSection = 'global' | 'working-directory' | 'added-directories';
 
 function tokenUsageKey(section: AssetSection): string {
-  return section === 'global' ? 'showTokenUsageGlobal' : 'showTokenUsageWorkingDirectory';
+  switch (section) {
+    case 'global': return 'showTokenUsageGlobal';
+    case 'working-directory': return 'showTokenUsageWorkingDirectory';
+    case 'added-directories': return 'showTokenUsageAddedDirectories';
+  }
 }
 
 export function getShowTokenUsage(section: AssetSection): boolean {

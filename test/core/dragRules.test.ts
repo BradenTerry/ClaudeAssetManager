@@ -45,11 +45,13 @@ describe('dragRules -- segmentForAssetType', () => {
 describe('dragRules -- planCopies', () => {
   const skill: DragItem = { path: '/a/.claude/skills/my-skill', category: 'skills' };
   const agent: DragItem = { path: '/a/.claude/agents/ops.md', category: 'agents' };
+  // path.join uses '\' on Windows; compare on normalized separators.
+  const norm = (c: { src: string; dest: string }) => ({ src: c.src.replace(/\\/g, '/'), dest: c.dest.replace(/\\/g, '/') });
 
   it('group target: matching category copies into the group dir, mismatch is rejected', () => {
     const target: DropTarget = { kind: 'group', dir: '/b/.claude/skills', segment: 'skills' };
     const { copies, rejected } = planCopies([skill, agent], target);
-    assert.deepStrictEqual(copies, [{ src: '/a/.claude/skills/my-skill', dest: '/b/.claude/skills/my-skill' }]);
+    assert.deepStrictEqual(copies.map(norm), [{ src: '/a/.claude/skills/my-skill', dest: '/b/.claude/skills/my-skill' }]);
     assert.strictEqual(rejected.length, 1, 'the agent is rejected at a skills group');
     assert.match(rejected[0].reason, /agents can only be copied to a agents folder/);
   });
@@ -58,7 +60,7 @@ describe('dragRules -- planCopies', () => {
     const target: DropTarget = { kind: 'container', dir: '/proj' };
     const { copies, rejected } = planCopies([skill, agent], target);
     assert.strictEqual(rejected.length, 0);
-    assert.deepStrictEqual(copies, [
+    assert.deepStrictEqual(copies.map(norm), [
       { src: '/a/.claude/skills/my-skill', dest: '/proj/.claude/skills/my-skill' },
       { src: '/a/.claude/agents/ops.md', dest: '/proj/.claude/agents/ops.md' }
     ]);

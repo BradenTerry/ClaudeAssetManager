@@ -740,6 +740,19 @@ describe('buildTreeNodes -- Working Directory container', () => {
     assert.deepStrictEqual(getProjects(nodes).map(p => p.label), ['MyApp']);
   });
 
+  it('AC-WD4b: a workspace with no .claude still shows the always-on type groups (create/drop targets)', () => {
+    const meta = { ensureWorkingDirBase: '/ws/fresh/.claude' } as unknown as PluginMetadataOptions;
+    const wd = getWorkingDir(buildTreeNodes([], meta));
+    assert.ok(wd, 'WD container present for an open workspace even with no assets');
+    const groupTypes = (wd!.children as Array<{ kind: NodeKind; assetType?: AssetType }>)
+      .filter(c => c.kind === NodeKind.Group)
+      .map(g => g.assetType);
+    // Skill and Subagent groups are always shown, so a fresh project has somewhere to drop them.
+    for (const t of [AssetType.Skill, AssetType.Subagent]) {
+      assert.ok(groupTypes.includes(t), `expected an empty ${t} group as a drop/create target`);
+    }
+  });
+
   it('AC-WD5: Working Directory label is "Working Directory"', () => {
     const assets: ClaudeAsset[] = [
       makeAsset(AssetType.Skill, 'proj-skill', '/Users/braden/Projects/MyApp/.claude/skills/proj-skill/SKILL.md', AssetScope.Project, '/Users/braden/Projects')

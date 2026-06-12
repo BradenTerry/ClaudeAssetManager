@@ -100,6 +100,10 @@ export interface PluginMetadataOptions {
   projectClaudeDir?: string;
   /** Absolute path to the global ~/.claude folder; when set, always-visible Skill/Subagent/Command groups are injected. */
   globalClaudeDir?: string;
+  /** Absolute path to the open workspace's .claude folder used to inject the always-visible
+   *  Working Directory type groups, even when that .claude does not exist yet (so a fresh project
+   *  shows the folders to create or drop assets into). */
+  ensureWorkingDirBase?: string;
   /** User-registered directory paths (claudeAssets.directories). When set, the Added Directories
    *  section shows a folder for every one -- even those with no Claude assets yet. */
   registeredDirs?: string[];
@@ -713,6 +717,8 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
     (pluginMeta && (pluginMeta as Partial<PluginMetadataOptions>).globalClaudeDir) ? pluginMeta.globalClaudeDir : undefined;
   const registeredDirs: string[] =
     (pluginMeta && (pluginMeta as Partial<PluginMetadataOptions>).registeredDirs) ? pluginMeta.registeredDirs! : [];
+  const ensureWorkingDirBase: string | undefined =
+    (pluginMeta && (pluginMeta as Partial<PluginMetadataOptions>).ensureWorkingDirBase) ? pluginMeta.ensureWorkingDirBase : undefined;
 
   // Partition by scope
   const globalAssets: ClaudeAsset[] = [];
@@ -930,8 +936,10 @@ export function buildTreeNodes(assets: ClaudeAsset[], pluginMeta?: PluginMetadat
   const projectPluginsFolder = buildProjectPluginsFolder(installedPlugins, projectTeamEnabled, projectLocalEnabled, outdatedPlugins, projectClaudeDir, pluginAssets);
 
   // ensureWdBase: when set, always-visible Skill/Subagent/Command groups are injected into
-  // the WD flat root area (the active project's main .claude folder).
-  const ensureWdBase = projectClaudeDir;
+  // the WD flat root area. Prefer the explicit workspace base (set even when .claude does not
+  // exist yet, so a fresh project still shows the folders to create/drop into); fall back to the
+  // resolved project .claude dir.
+  const ensureWdBase = ensureWorkingDirBase ?? projectClaudeDir;
 
   if (sortedProjects.length > 0 || workingRootAssets.length > 0 || projectPluginsFolder !== undefined || !!ensureWdBase) {
     const wdChildren: ContainerNodeDescriptor['children'] = [];

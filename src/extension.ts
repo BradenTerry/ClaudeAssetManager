@@ -395,7 +395,12 @@ export function activate(context: vscode.ExtensionContext): void {
       ? readEnabledPlugins(path.join(currentProjectDir, '.claude', 'settings.local.json'))
       : new Map();
 
-    const meta = { installedPlugins, outdated, enabled: enabledMap, marketplaces, projectTeamEnabled: currentTeamEnabled, projectLocalEnabled: currentLocalEnabled, projectClaudeDir, globalClaudeDir: homeClaudeDir, registeredDirs };
+    // Show the Working Directory type folders for any open workspace, even one without a .claude
+    // dir yet, so there is always somewhere to create or drop assets.
+    const ensureWorkingDirBase = projectClaudeDir
+      ?? (workspaceDirs.length > 0 ? path.join(workspaceDirs[0], '.claude') : undefined);
+
+    const meta = { installedPlugins, outdated, enabled: enabledMap, marketplaces, projectTeamEnabled: currentTeamEnabled, projectLocalEnabled: currentLocalEnabled, projectClaudeDir, globalClaudeDir: homeClaudeDir, registeredDirs, ensureWorkingDirBase };
     // Each provider leads its tree with a token-summary row (info icon + (a)/(d)
     // legend) when its section's token toggle is on -- see AssetTreeProvider.rebuild.
     globalProvider.update(assets, meta);

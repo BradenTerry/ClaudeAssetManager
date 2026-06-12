@@ -5,6 +5,13 @@ follows [Keep a Changelog](https://keepachangelog.com/) and
 [Semantic Versioning](https://semver.org/). Older releases are listed at
 [GitHub Releases](https://github.com/BradenTerry/ClaudeAssetManager/releases).
 
+## [0.7.2] - 2026-06-12
+
+### Changed
+
+- The **Commands** folder is now always shown when empty (like Skills and Agents), so a command
+  can be created or drag-copied into any section, including a fresh project.
+
 ## [0.7.1] - 2026-06-12
 
 ### Fixed

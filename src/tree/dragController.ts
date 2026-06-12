@@ -8,8 +8,14 @@ import {
 } from '../core/dragRules';
 import { TreeNode, GroupNode, FsDirNode, FsFileNode, AssetNode, ContainerNode } from './nodes';
 
-const MIME = 'application/vnd.code.claudeasset';
+const MIME = 'application/vnd.claudeassets.drag';
 const PLUGINS_ROOT = path.join(os.homedir(), '.claude', 'plugins');
+
+// VS Code adds a per-view data-transfer item under application/vnd.code.tree.<lowercased view id>
+// whose value is the dragged node objects. Accepting these makes cross-view drops fire handleDrop
+// even when the custom mime is not carried across trees.
+const TREE_MIMES = ['claudeAssets.global', 'claudeAssets.workingDirectory', 'claudeAssets.addedDirectories']
+  .map(id => `application/vnd.code.tree.${id.toLowerCase()}`);
 
 /** Absolute path of a node if it is a draggable file/folder, else undefined. */
 function sourcePath(node: TreeNode): string | undefined {
@@ -17,6 +23,19 @@ function sourcePath(node: TreeNode): string | undefined {
   if (node instanceof FsFileNode) return node.filePath;
   if (node instanceof AssetNode) return node.filePath;
   return undefined;
+}
+
+/** Build the draggable items from a set of source nodes. */
+function nodesToItems(nodes: readonly TreeNode[]): DragItem[] {
+  const items: DragItem[] = [];
+  for (const node of nodes) {
+    const p = sourcePath(node);
+    if (!p || !isDraggableSource(p)) continue;
+    const category = categoryOf(p);
+    if (!category) continue;
+    items.push({ path: p, category });
+  }
+  return items;
 }
 
 /** Resolve which destination a drop landed on, or undefined when it is not a valid target. */
@@ -67,35 +86,40 @@ function isInside(src: string, dest: string): boolean {
  */
 export class AssetDragAndDropController implements vscode.TreeDragAndDropController<TreeNode> {
   readonly dragMimeTypes = [MIME];
-  readonly dropMimeTypes = [MIME];
+  readonly dropMimeTypes = [MIME, ...TREE_MIMES];
 
   constructor(private readonly refresh: () => Promise<void>) {}
 
   handleDrag(source: readonly TreeNode[], dataTransfer: vscode.DataTransfer): void {
-    const items: DragItem[] = [];
-    for (const node of source) {
-      const p = sourcePath(node);
-      if (!p || !isDraggableSource(p)) continue;
-      const category = categoryOf(p);
-      if (!category) continue;
-      items.push({ path: p, category });
-    }
+    const items = nodesToItems(source);
     if (items.length > 0) {
       dataTransfer.set(MIME, new vscode.DataTransferItem(JSON.stringify(items)));
     }
   }
 
-  async handleDrop(target: TreeNode | undefined, dataTransfer: vscode.DataTransfer): Promise<void> {
-    const transferItem = dataTransfer.get(MIME);
-    if (!transferItem) return;
-
-    let items: DragItem[];
-    try {
-      items = JSON.parse(await transferItem.asString()) as DragItem[];
-    } catch {
-      return;
+  /** Recover the dragged items from the custom mime, or from VS Code's per-view tree mimes. */
+  private async readItems(dataTransfer: vscode.DataTransfer): Promise<DragItem[]> {
+    const custom = dataTransfer.get(MIME);
+    if (custom) {
+      try {
+        const parsed = JSON.parse(await custom.asString()) as DragItem[];
+        if (parsed && parsed.length > 0) return parsed;
+      } catch { /* fall through to tree mimes */ }
     }
-    if (!items || items.length === 0) return;
+    for (const mime of TREE_MIMES) {
+      const item = dataTransfer.get(mime);
+      const value = item?.value as TreeNode[] | undefined;
+      if (Array.isArray(value) && value.length > 0) {
+        const items = nodesToItems(value);
+        if (items.length > 0) return items;
+      }
+    }
+    return [];
+  }
+
+  async handleDrop(target: TreeNode | undefined, dataTransfer: vscode.DataTransfer): Promise<void> {
+    const items = await this.readItems(dataTransfer);
+    if (items.length === 0) return;
 
     const dropTarget = resolveTarget(target);
     if (!dropTarget) {

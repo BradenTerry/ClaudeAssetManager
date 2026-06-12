@@ -48,6 +48,21 @@ describe('AssetDragAndDropController', () => {
     assert.ok(fs.existsSync(path.join(destDir, 'my-skill', 'reference.md')), 'whole folder copied (reference too)');
   });
 
+  it('copies via the per-view tree mime (cross-view drop, no custom mime)', async () => {
+    const srcSkill = path.join(root, 'a', '.claude', 'skills', 'my-skill');
+    writeFile(path.join(srcSkill, 'SKILL.md'), 'body');
+    const destDir = path.join(root, 'b', '.claude', 'skills');
+    fs.mkdirSync(destDir, { recursive: true });
+
+    // Simulate VS Code's cross-view transfer: only the source view's tree mime is present,
+    // and its value is the dragged node objects (no custom mime from handleDrag).
+    const dt = new vscodeMock.DataTransfer();
+    dt.set('application/vnd.code.tree.claudeassets.global', new vscodeMock.DataTransferItem([new FsDirNode(srcSkill, 'my-skill')]));
+    await controller.handleDrop(skillsGroup(destDir) as never, dt as never);
+
+    assert.ok(fs.existsSync(path.join(destDir, 'my-skill', 'SKILL.md')), 'cross-view drop copied via the tree mime');
+  });
+
   it('copies into an empty project/added-directory folder, routing under .claude/<category>', async () => {
     const srcSkill = path.join(root, 'a', '.claude', 'skills', 'my-skill');
     writeFile(path.join(srcSkill, 'SKILL.md'), 'body');

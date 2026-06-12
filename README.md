@@ -80,6 +80,15 @@ Right-click a directory to **Remove** it. The section sits below Working Directo
   folders under **Projects**. Plugin folders are managed by Claude and cannot be deleted here.
 - **Delete** moves the item to the system trash and asks for confirmation first.
 
+### Copying assets between sections
+
+**Drag and drop** to copy assets between Global, Working Directory, and Added Directories. For
+example, drop a whole skill folder onto another project to reuse it. Copies are type-constrained: a
+skill only lands in **skills**, an agent in **agents**, a command in **commands**. Drop onto a
+matching type folder, or onto a project / added-directory folder to route each item to the right
+place automatically. If something with the same name already exists, you are prompted before it is
+overwritten. Dragging copies; it never deletes the original.
+
 ### Managing plugins
 
 Plugin actions shell out to the Claude Code CLI and require `claude` on your `PATH`. After any

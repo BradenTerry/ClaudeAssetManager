@@ -12,6 +12,7 @@ import { buildMarketplacePluginRows, pageMarketplaceRows } from './core/marketpl
 import { openPluginManager, PluginManagerDeps } from './webview/pluginManager';
 import { AssetTreeProvider } from './tree/assetTreeProvider';
 import { AssetNode, PluginFolderNode, ContainerNode, GroupNode } from './tree/nodes';
+import { AssetDragAndDropController } from './tree/dragController';
 import { isValidAssetName, createAsset } from './core/assetCreation';
 import { planDelete, deleteConfirmDetail } from './core/deletePlan';
 import { deleteWithRetry } from './core/deleteWithRetry';
@@ -411,17 +412,25 @@ export function activate(context: vscode.ExtensionContext): void {
   }
 
   // Register the two sidebar sections as separate views
+  // One controller shared by all three views so assets can be drag-copied between them.
+  const dndController = new AssetDragAndDropController(() => runScan());
   const globalView = vscode.window.createTreeView('claudeAssets.global', {
     treeDataProvider: globalProvider,
-    showCollapseAll: true
+    showCollapseAll: true,
+    canSelectMany: true,
+    dragAndDropController: dndController
   });
   const workingDirView = vscode.window.createTreeView('claudeAssets.workingDirectory', {
     treeDataProvider: workingDirProvider,
-    showCollapseAll: true
+    showCollapseAll: true,
+    canSelectMany: true,
+    dragAndDropController: dndController
   });
   const addedDirsView = vscode.window.createTreeView('claudeAssets.addedDirectories', {
     treeDataProvider: addedDirsProvider,
-    showCollapseAll: true
+    showCollapseAll: true,
+    canSelectMany: true,
+    dragAndDropController: dndController
   });
 
   // Title the Working Directory section after the folder VSCode is open in, e.g. "Projects (WD)".

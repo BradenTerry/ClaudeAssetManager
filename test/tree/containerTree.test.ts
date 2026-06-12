@@ -41,6 +41,17 @@ function findProject(nodes: ReturnType<typeof buildTreeNodes>, label: string): C
   return getProjects(nodes).find(c => c.label === label);
 }
 
+function getAddedDirs(nodes: ReturnType<typeof buildTreeNodes>): ContainerNodeDescriptor | undefined {
+  return (nodes as ContainerNodeDescriptor[]).find(
+    n => n.kind === NodeKind.Container && n.containerKind === 'added-directories'
+  );
+}
+
+function findAddedProject(nodes: ReturnType<typeof buildTreeNodes>, label: string): ContainerNodeDescriptor | undefined {
+  const added = getAddedDirs(nodes);
+  return added ? (added.children as ContainerNodeDescriptor[]).find(c => c.label === label) : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Container-level structure
 // ---------------------------------------------------------------------------
@@ -299,13 +310,45 @@ describe('buildTreeNodes -- project containers', () => {
     assert.deepStrictEqual(labels, ['Alpha', 'Beta'], 'projects should be sorted alphabetically');
   });
 
-  it('Registered-scope assets grouped by derived project name', () => {
+  it('Registered-scope assets grouped by derived project name under Added Directories', () => {
     const assets: ClaudeAsset[] = [
       makeAsset(AssetType.Skill, 'reg-skill', '/Users/braden/Projects/foo/skills/bar/SKILL.md', AssetScope.Registered, '/Users/braden/Projects')
     ];
     const nodes = buildTreeNodes(assets);
-    const projContainer = findProject(nodes, 'foo');
-    assert.ok(projContainer, 'registered asset should be grouped under project "foo"');
+    // Registered (user-added) dirs live in their own Added Directories section, not Working Directory.
+    assert.ok(!getWorkingDir(nodes), 'registered-only assets should not create a Working Directory container');
+    const projContainer = findAddedProject(nodes, 'foo');
+    assert.ok(projContainer, 'registered asset should be grouped under project "foo" in Added Directories');
+  });
+
+  it('shows a folder for every registered dir (from meta), even ones with no Claude assets', () => {
+    const assets: ClaudeAsset[] = [
+      makeAsset(AssetType.Skill, 'r-skill', '/Users/braden/HasAssets/.claude/skills/r-skill/SKILL.md', AssetScope.Registered, '/Users/braden/HasAssets')
+    ];
+    const meta = { registeredDirs: ['/Users/braden/HasAssets', '/Users/braden/Empty'] } as unknown as PluginMetadataOptions;
+    const nodes = buildTreeNodes(assets, meta);
+    const withAssets = findAddedProject(nodes, 'HasAssets');
+    const empty = findAddedProject(nodes, 'Empty');
+    assert.ok(withAssets, 'registered dir with assets should show');
+    assert.ok(empty, 'registered dir with NO Claude assets should still show as a folder');
+    assert.strictEqual(empty!.children.length, 0, 'empty registered dir has no children');
+    assert.ok(/no Claude assets/i.test(empty!.description ?? ''), 'empty dir notes it has no Claude assets');
+    assert.strictEqual(empty!.contextValue, 'registeredRoot', 'registered-dir folder is removable (registeredRoot contextValue)');
+    assert.strictEqual(empty!.dirPath, '/Users/braden/Empty', 'registered-dir folder carries its path for reveal/remove');
+  });
+
+  it('Project and Registered assets land in separate Working Directory and Added Directories sections', () => {
+    const assets: ClaudeAsset[] = [
+      makeAsset(AssetType.Skill, 'p-skill', '/Users/braden/Projects/MyApp/.claude/skills/p-skill/SKILL.md', AssetScope.Project, '/Users/braden/Projects'),
+      makeAsset(AssetType.Skill, 'r-skill', '/Users/braden/Other/lib/.claude/skills/r-skill/SKILL.md', AssetScope.Registered, '/Users/braden/Other')
+    ];
+    const nodes = buildTreeNodes(assets);
+    assert.ok(getWorkingDir(nodes), 'Working Directory container present for the project asset');
+    assert.ok(getAddedDirs(nodes), 'Added Directories container present for the registered asset');
+    assert.ok(findProject(nodes, 'MyApp'), 'MyApp under Working Directory');
+    assert.ok(findAddedProject(nodes, 'lib'), 'lib under Added Directories');
+    // The registered project must NOT also appear under Working Directory.
+    assert.ok(!findProject(nodes, 'lib'), 'registered dir should not leak into Working Directory');
   });
 });
 
@@ -709,10 +752,10 @@ describe('buildTreeNodes -- Working Directory container', () => {
 
   it('AC-WD6: root-level assets (the working dir own .claude) render flat at the WD root, not in a self-named folder', () => {
     const assets: ClaudeAsset[] = [
-      // sub-project beneath the registered root
-      makeAsset(AssetType.Skill, 'a-skill', '/Users/braden/Projects/Alpha/.claude/skills/a-skill/SKILL.md', AssetScope.Registered, '/Users/braden/Projects'),
-      // the working dir's OWN .claude config (directly under the registered root)
-      makeAsset(AssetType.Config, 'settings.local.json', '/Users/braden/Projects/.claude/settings.local.json', AssetScope.Registered, '/Users/braden/Projects')
+      // sub-project beneath the workspace root
+      makeAsset(AssetType.Skill, 'a-skill', '/Users/braden/Projects/Alpha/.claude/skills/a-skill/SKILL.md', AssetScope.Project, '/Users/braden/Projects'),
+      // the working dir's OWN .claude config (directly under the workspace root)
+      makeAsset(AssetType.Config, 'settings.local.json', '/Users/braden/Projects/.claude/settings.local.json', AssetScope.Project, '/Users/braden/Projects')
     ];
     const nodes = buildTreeNodes(assets);
     const wd = getWorkingDir(nodes)!;

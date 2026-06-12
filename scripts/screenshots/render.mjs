@@ -65,8 +65,10 @@ const md = `<svg width="16" height="16" viewBox="0 0 16 16" style="vertical-alig
 const json = ci('json', '#cbcb41');
 
 // Title-bar icon sets.
+const addIcon = ci('add');
 const globalIcons = [ci('info'), tkIcon, ci('refresh')];
 const wdIcons = [ci('info'), tkIcon, treeIcon, ci('refresh')];
+const addedIcons = [ci('info'), tkIcon, addIcon, ci('refresh')];
 
 function panel(innerHtml, width = 300) {
   return `<div class="panel" style="width:${width}px;background:${C.bg};border-radius:8px;overflow:hidden;
@@ -106,9 +108,14 @@ const wdRowsClean =
   row({ twisty: 'right', icon: folder, label: 'commands' }) +
   row({ twisty: 'right', icon: folder, label: 'workflows' });
 
-// 1. Overview (default state, token estimates off): both sections.
+// 1. Overview (default state, token estimates off): all three sections.
+const addedRowsClean =
+  row({ twisty: 'right', icon: folder, label: 'shared-prompts' }) +
+  row({ twisty: 'right', icon: folder, label: 'team-standards' });
 const overview = panel(
-  globalRowsClean + `<div style="height:6px"></div>` + header('WORKOUTS (WD)', wdIcons) + wdRowsClean
+  globalRowsClean + `<div style="height:6px"></div>` +
+  header('WORKOUTS (WD)', wdIcons) + wdRowsClean + `<div style="height:6px"></div>` +
+  header('ADDED DIRECTORIES', addedIcons) + addedRowsClean
 );
 
 // 2. Tokens close-up: token estimates turned ON, with a hover tooltip over the summary row.

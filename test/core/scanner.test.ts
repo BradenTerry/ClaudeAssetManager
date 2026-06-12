@@ -434,7 +434,7 @@ description: Workspace agent
     assert.strictEqual(agent.scope, AssetScope.Project);
   });
 
-  it('assigns Project scope for assets nested under .claude/ inside a registered dir', () => {
+  it('assigns Registered scope for assets nested under .claude/ inside a registered dir', () => {
     const regDir = path.join(root, 'registered');
     mkdir(regDir);
     writeFile(path.join(regDir, '.claude', 'agents', 'reg-agent.md'), `---
@@ -449,7 +449,9 @@ description: Registered agent
 
     const agent = assets.find(a => a.name === 'reg-agent');
     assert.ok(agent, 'reg-agent not found');
-    assert.strictEqual(agent.scope, AssetScope.Project, 'asset under .claude/ in a registered dir must be Project scope');
+    // A registered dir is its own section: everything beneath it (even inside .claude/) is
+    // Registered scope so it groups under Added Directories, not Working Directory.
+    assert.strictEqual(agent.scope, AssetScope.Registered, 'asset under .claude/ in a registered dir must be Registered scope');
   });
 
   it('assigns Registered scope for a loose asset under a registered dir (no .claude/ segment)', () => {

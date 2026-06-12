@@ -6,12 +6,13 @@
 
 A VSCode extension that puts every Claude Code asset on your machine in one sidebar: skills,
 subagents, slash commands, memory and CLAUDE.md files, `.claude` config, and installed plugins.
-It scans your global `~/.claude` directory, your installed plugins, and your projects, then
-groups everything so you can find, open, and manage any asset in a few clicks.
+It scans your global `~/.claude` directory, your installed plugins, your open workspace folders,
+and any extra directories you register (which persist across workspaces), then groups everything so
+you can find, open, and manage any asset in a few clicks.
 
 ## What it shows
 
-Open the **Claude Asset Manager** icon in the Activity Bar to reveal two sections.
+Open the **Claude Asset Manager** icon in the Activity Bar to reveal three sections.
 
 ### Working Directory
 
@@ -50,6 +51,16 @@ Your machine-wide `~/.claude` assets:
   configured marketplace (from `known_marketplaces.json`) appears here even with no installed
   plugins yet, so an added marketplace shows up immediately and lists `(no plugins installed)`. The
   **Plugins** folder and each marketplace also show an `X/Y plugins enabled` summary.
+
+### Added Directories
+
+Directories outside your open workspace that you want scanned too. Click the **+** in the **Added
+Directories** title bar to pick a folder; it is scanned like a workspace folder, with its assets and
+sub-projects grouped below. Each registered directory always appears as a folder (even one with no
+Claude assets yet, marked `(no Claude assets)`). Registered directories are saved to your user
+settings via `claudeAssets.directories`, so they **persist across every workspace** you open.
+Right-click a directory to **Remove** it. The section sits below Working Directory and shows an
+**Add Directory** button until you add one.
 
 ### Details that keep the tree clean
 
@@ -134,7 +145,9 @@ synthetic `(local)` marketplace group cannot be refreshed or removed.
 
 ## Settings
 
-- `claudeAssets.directories`: additional directories to scan recursively for projects.
+- `claudeAssets.directories`: additional directories to scan recursively, shown in the **Added
+  Directories** section. Managed with **Add Directory** / **Remove Directory** and saved at the user
+  level, so they persist across workspaces.
 - `claudeAssets.followSymlinks`: follow symbolic links while scanning (default `true`).
 - `claudeAssets.excludeDirs`: directory names to skip during recursive scans.
 - `claudeAssets.maxDepth`: how deep to search for a `.claude` directory (default `6`, minimum `1`).

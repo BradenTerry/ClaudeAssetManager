@@ -2,14 +2,15 @@
 
 A VSCode extension that puts every Claude Code asset on your machine in one sidebar: skills,
 subagents, slash commands, memory and CLAUDE.md files, `.claude` config, and installed plugins.
-It scans your global `~/.claude` directory, your installed plugins, and your projects, then
-groups everything so you can find, open, and manage any asset in a few clicks.
+It scans your global `~/.claude` directory, your installed plugins, your open workspace folders,
+and any extra directories you register (which persist across workspaces), then groups everything so
+you can find, open, and manage any asset in a few clicks.
 
-![The Global and Working Directory sections in the sidebar.](media/screenshot-overview.png)
+![The Global, Working Directory, and Added Directories sections in the sidebar.](media/screenshot-overview.png)
 
 ## What it shows
 
-Open the **Claude Asset Manager** icon in the Activity Bar to reveal two sections.
+Open the **Claude Asset Manager** icon in the Activity Bar to reveal three sections.
 
 ### Working Directory
 
@@ -38,6 +39,16 @@ Your machine-wide `~/.claude` assets:
 - A **Plugins** folder listing every installed plugin, nested under its source marketplace with
   its version, and an `N Updates available` indicator when a newer version exists in your local
   catalog (no network calls are made).
+
+### Added Directories
+
+Directories outside your open workspace that you want scanned too. Click the **+** in the
+**Added Directories** title bar, pick a folder, and it is scanned just like a workspace folder,
+with its assets and sub-projects grouped below. Each registered directory always appears as a
+folder (even one with no Claude assets yet, marked `(no Claude assets)`), so you can confirm it was
+added and reveal it. Registered directories are saved to your user settings, so they **persist
+across every folder and workspace** you open. Right-click a directory to **Remove** it. This
+section sits directly below Working Directory and shows an **Add Directory** button until you add one.
 
 ### Details that keep the tree clean
 
@@ -101,7 +112,9 @@ execute. Files inside a plugin cannot be deleted individually; uninstall the plu
 
 ## Settings
 
-- `claudeAssets.directories`: additional directories to scan recursively for projects.
+- `claudeAssets.directories`: additional directories to scan recursively (shown in the **Added
+  Directories** section). Managed with the **Add Directory** / **Remove Directory** commands and
+  saved at the user level, so they persist across workspaces.
 - `claudeAssets.followSymlinks`: follow symbolic links while scanning (default `true`).
 - `claudeAssets.excludeDirs`: directory names to skip during recursive scans.
 - `claudeAssets.showTokenUsageGlobal` / `claudeAssets.showTokenUsageWorkingDirectory`: show token

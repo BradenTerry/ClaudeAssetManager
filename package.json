@@ -232,7 +232,7 @@
       },
       {
         "command": "claudeAssets.tokenLegend",
-        "title": "Token Counts: What do (a) and (d) mean?",
+        "title": "Token Estimate Legend (~, tk, a, d)",
         "icon": "$(info)",
         "category": "Claude Asset Manager"
       },
@@ -261,6 +261,11 @@
           "command": "claudeAssets.refresh",
           "when": "view == claudeAssets.global || view == claudeAssets.workingDirectory",
           "group": "navigation@3"
+        },
+        {
+          "command": "claudeAssets.tokenLegend",
+          "when": "view == claudeAssets.global || view == claudeAssets.workingDirectory",
+          "group": "navigation@0"
         },
         {
           "command": "claudeAssets.enableTokenUsageGlobal",

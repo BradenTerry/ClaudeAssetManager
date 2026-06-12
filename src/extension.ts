@@ -609,8 +609,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('claudeAssets.hideWorktrees', () => setWorktreesVisible(false)),
     vscode.commands.registerCommand('claudeAssets.tokenLegend', () => {
       vscode.window.showInformationMessage(
-        'Token counts in this view are rough ~estimates.',
-        { modal: true, detail: tokenLegendLines().join('\n\n') }
+        'Token estimates -- what the abbreviations mean',
+        { modal: true, detail: tokenLegendLines().join('\n') }
       );
     }),
 

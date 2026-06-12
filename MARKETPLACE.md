@@ -5,6 +5,8 @@ subagents, slash commands, memory and CLAUDE.md files, `.claude` config, and ins
 It scans your global `~/.claude` directory, your installed plugins, and your projects, then
 groups everything so you can find, open, and manage any asset in a few clicks.
 
+![The Global and Working Directory sections in the sidebar.](media/screenshot-overview.png)
+
 ## What it shows
 
 Open the **Claude Asset Manager** icon in the Activity Bar to reveal two sections.
@@ -18,10 +20,14 @@ applies to your current workspace:
 - The open folder's own `.claude` assets (CLAUDE.md, config, skills, subagents, commands) listed
   at the top.
 - One folder per sub-project, each with its own CLAUDE.md, config, and asset groups.
-- Git worktrees grouped under a **Worktrees** folder so they do not duplicate a project's assets.
+- Git worktrees, hidden by default and grouped under a **Worktrees** folder when shown, so they do
+  not clutter or double-count the project's assets. Toggle them with the tree icon in the section
+  title bar.
 
 In other words, the whole set of skills, agents, commands, workflows, memory, and config Claude can pull
 into a session for the directory you are working in, laid out in one place.
+
+![Worktrees revealed under the Working Directory section after toggling the tree icon.](media/screenshot-worktrees.png)
 
 ### Global
 
@@ -40,6 +46,24 @@ Your machine-wide `~/.claude` assets:
 - **Scoped discovery** recognizes config only inside a `.claude/` directory, picks up CLAUDE.md
   only at sensible locations (global, a project or worktree root, or inside `.claude/`), follows
   symlinks, and skips noise like `node_modules`, `.git`, `bin`, and `obj`.
+
+## Token estimates
+
+See roughly how much of Claude's context each asset costs. Turn it on per section with the **tk**
+icon in the title bar (off by default), and every row, group folder, and a summary row at the top
+of the section gains an estimate split two ways:
+
+- **(a) always loaded**: counted into Claude's context every turn (CLAUDE.md, a skill's name and
+  description).
+- **(d) on demand**: loaded only when that asset is actually used (a skill's body, a command, a
+  workflow).
+
+Counts are local heuristics shown with a `~` (about four characters per token), not the exact
+tokenizer, and worktree copies are excluded so duplicates do not inflate the totals. The **info**
+icon in the title bar spells out every abbreviation, and hovering the summary row shows the same
+legend.
+
+![The token-estimate legend shown while hovering the section summary row.](media/screenshot-tokens.png)
 
 ## Using it
 
@@ -80,6 +104,10 @@ execute. Files inside a plugin cannot be deleted individually; uninstall the plu
 - `claudeAssets.directories`: additional directories to scan recursively for projects.
 - `claudeAssets.followSymlinks`: follow symbolic links while scanning (default `true`).
 - `claudeAssets.excludeDirs`: directory names to skip during recursive scans.
+- `claudeAssets.showTokenUsageGlobal` / `claudeAssets.showTokenUsageWorkingDirectory`: show token
+  estimates in each section (default `false`; also toggled from the **tk** title-bar icon).
+- `claudeAssets.showWorktrees`: show git worktrees in the Working Directory section (default
+  `false`; also toggled from the tree title-bar icon).
 
 ## Requirements
 
